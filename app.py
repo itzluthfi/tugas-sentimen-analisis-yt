@@ -17,7 +17,8 @@ from sklearn.metrics import (
     accuracy_score,
     precision_recall_fscore_support,
     confusion_matrix,
-    ConfusionMatrixDisplay
+    ConfusionMatrixDisplay,
+    cohen_kappa_score
 )
 
 from src.config import OUTPUT_FILE, YOUTUBE_VIDEO_URL, MAX_COMMENTS, HISTORY_DIR, APP_MODE
@@ -34,6 +35,21 @@ if APP_MODE == "production":
     except Exception as e:
         # Display warning if the spreadsheet fails to load
         st.warning(f"Gagal menghubungkan ke Google Sheets: {e}")
+
+
+def interpret_kappa(score):
+    if score < 0:
+        return "Tidak ada kesepakatan"
+    elif score <= 0.20:
+        return "Sangat Lemah"
+    elif score <= 0.40:
+        return "Lemah"
+    elif score <= 0.60:
+        return "Sedang"
+    elif score <= 0.80:
+        return "Kuat"
+    else:
+        return "Sangat Kuat"
 
 
 # Set Streamlit Page Config
@@ -471,7 +487,7 @@ def convert_df_to_pdf(df, video_title, video_url):
 st.sidebar.title(":material/explore: Navigasi Menu")
 menu_selection = st.sidebar.radio(
     "Pilih Halaman:",
-    options=["Analisis Video Tunggal", "Analisis Perbandingan Global"],
+    options=["Analisis Video Tunggal", "Analisis Perbandingan Global", "Kelola Kamus Slang"],
     index=0
 )
 st.sidebar.markdown("---")
@@ -1356,9 +1372,14 @@ if st.session_state.df is not None:
     
     st.markdown("---")
     
+    # Filter mismatch
+    show_mismatch = st.checkbox(":material/compare: Hanya tampilkan data Mismatch (Lexicon vs LLM berbeda)", value=False, key="filter_mismatch")
+    
     tab_view, tab_edit = st.tabs([":material/visibility: Tampilan Tabel Berwarna", ":material/edit: Edit Ground Truth"])
     
     display_df = st.session_state.df.copy()
+    if show_mismatch:
+        display_df = display_df[display_df["Lexicon Sentiment"] != display_df["LLM Sentiment"]]
     
     with tab_view:
         def style_sentiment(val):
@@ -1478,9 +1499,11 @@ if st.session_state.df is not None:
         # Standard ML Scores
         lex_acc = accuracy_score(y_true, y_lexicon)
         lex_prec, lex_rec, lex_f1, _ = precision_recall_fscore_support(y_true, y_lexicon, average='macro', zero_division=0)
+        kappa_lex = cohen_kappa_score(y_true, y_lexicon)
         
         llm_acc = accuracy_score(y_true, y_llm)
         llm_prec, llm_rec, llm_f1, _ = precision_recall_fscore_support(y_true, y_llm, average='macro', zero_division=0)
+        kappa_llm = cohen_kappa_score(y_true, y_llm)
         
         # Calculate SEMANTIKA Points System
         # Rules:
@@ -1663,6 +1686,7 @@ if st.session_state.df is not None:
                 st.write(f"- **Precision (Presisi)**: {lex_prec * 100:.2f}%")
                 st.write(f"- **Recall (Sensitivitas)**: {lex_rec * 100:.2f}%")
                 st.write(f"- **F1-Score**: {lex_f1 * 100:.2f}%")
+                st.write(f"- **Cohen's Kappa**: `{kappa_lex:.4f}` ({interpret_kappa(kappa_lex)})")
                 
             with col_m2:
                 st.markdown(f"#### :material/psychology: Performa LLM ({st.session_state.llm_model.split('/')[-1]})")
@@ -1670,6 +1694,7 @@ if st.session_state.df is not None:
                 st.write(f"- **Precision (Presisi)**: {llm_prec * 100:.2f}%")
                 st.write(f"- **Recall (Sensitivitas)**: {llm_rec * 100:.2f}%")
                 st.write(f"- **F1-Score**: {llm_f1 * 100:.2f}%")
+                st.write(f"- **Cohen's Kappa**: `{kappa_llm:.4f}` ({interpret_kappa(kappa_llm)})")
             
             # Plot Confusion Matrices Side by Side
             fig_cm, (ax_cm1, ax_cm2) = plt.subplots(1, 2, figsize=(15, 6))
@@ -1728,6 +1753,81 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig_metrics)
             plt.close()
+            
+            st.markdown("---")
+            st.markdown("#### :material/psychology: Nilai Cohen's Kappa (Tingkat Keandalan Klasifikasi)")
+            
+            col_k1, col_k2 = st.columns(2)
+            with col_k1:
+                st.info(f"**Cohen's Kappa Lexicon vs Ground Truth:**\n\n`{kappa_lex:.4f}` $\\rightarrow$ Kesepakatan **{interpret_kappa(kappa_lex)}**", icon=":material/book:")
+            with col_k2:
+                st.info(f"**Cohen's Kappa LLM vs Ground Truth:**\n\n`{kappa_llm:.4f}` $\\rightarrow$ Kesepakatan **{interpret_kappa(kappa_llm)}**", icon=":material/psychology:")
+                
+            st.markdown("""
+            <small>
+            *Catatan Metodologi:* Skor Cohen's Kappa mengukur kekuatan kesepakatan klasifikasi dengan mengeliminasi faktor kebetulan (chance agreement).
+            Skala kesepakatan Cohen's Kappa:
+            - &lt; 0.00: Tidak ada kesepakatan
+            - 0.01 - 0.20: Sangat Lemah
+            - 0.21 - 0.40: Lemah
+            - 0.41 - 0.60: Sedang
+            - 0.61 - 0.80: Kuat
+            - 0.81 - 1.00: Sangat Kuat
+            </small>
+            """, unsafe_allow_html=True)
+
+elif menu_selection == "Kelola Kamus Slang":
+    st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Kelola Kamus Slang</h1>", unsafe_allow_html=True)
+    st.markdown("Halaman ini digunakan untuk mengelola kamus singkatan (*slang*) yang digunakan dalam pra-pemrosesan metode Lexicon.")
+    st.markdown("---")
+    
+    from src.normalizer import load_slang_dict, save_custom_slang, CUSTOM_SLANG_PATH
+    
+    # We want to edit the custom slang dictionary.
+    import json
+    custom_slang = {}
+    if os.path.exists(CUSTOM_SLANG_PATH):
+        try:
+            with open(CUSTOM_SLANG_PATH, "r", encoding="utf-8") as f:
+                custom_slang = json.load(f)
+        except Exception:
+            pass
+            
+    # Convert custom slang dict to dataframe for editing
+    slang_data = [{"Singkatan (Slang)": k, "Kata Baku": v} for k, v in custom_slang.items()]
+    df_slang = pd.DataFrame(slang_data)
+    if df_slang.empty:
+        df_slang = pd.DataFrame(columns=["Singkatan (Slang)", "Kata Baku"])
+        
+    st.info("Kamus slang default (seperti 'yg' -> 'yang', 'bgt' -> 'banget') sudah aktif di sistem secara otomatis. "
+            "Gunakan tabel di bawah ini untuk **menambahkan singkatan baru** atau **meng-override** kata slang default.", icon=":material/info:")
+            
+    edited_slang_df = st.data_editor(
+        df_slang,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Singkatan (Slang)": st.column_config.TextColumn("Singkatan (Slang) / Kata Gaul", help="Kata gaul/singkatan yang ingin dicocokkan (contoh: 'mager')", required=True),
+            "Kata Baku": st.column_config.TextColumn("Kata Baku / Normalisasi", help="Kata baku hasil konversinya (contoh: 'malas')", required=True),
+        },
+        key="slang_editor"
+    )
+    
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button(":material/save: Simpan Perubahan", use_container_width=True):
+            # Convert dataframe back to dictionary
+            new_custom_slang = {}
+            for _, row in edited_slang_df.iterrows():
+                k = str(row.get("Singkatan (Slang)", "")).strip().lower()
+                v = str(row.get("Kata Baku", "")).strip().lower()
+                if k:
+                    new_custom_slang[k] = v
+            if save_custom_slang(new_custom_slang):
+                st.success("Kamus slang kustom berhasil disimpan dan diperbarui!")
+                st.rerun()
+            else:
+                st.error("Gagal menyimpan kamus slang.")
 
 else:
     # Welcome message with clean CSS styling

@@ -23,6 +23,10 @@ class LexiconSentimentAnalyzer:
         self.stemmer = None
         self.stopword_remover = None
         
+        # Negation lists for dynamic sentiment inversion
+        self.negation_words_id = {"tidak", "g", "ga", "gak", "kaga", "kagak", "tdk", "bukan", "kurang", "belum", "blm"}
+        self.negation_words_en = {"not", "no", "never", "dont", "doesnt", "didnt", "cant", "cannot", "isnt", "arent", "wasnt", "werent", "without", "lack"}
+        
         # Ensure lexicon directory exists and files are downloaded
         self._ensure_lexicon_files()
         # Load lexicons into memory
@@ -97,13 +101,21 @@ class LexiconSentimentAnalyzer:
 
     def _init_sastrawi(self):
         """
-        Initializes PySastrawi stemmer and stopword remover.
+        Initializes PySastrawi stemmer and stopword remover with negation word protection.
         """
         logger.info("Menginisialisasi Sastrawi Stemmer dan StopWordRemover...")
         stemmer_factory = StemmerFactory()
         self.stemmer = stemmer_factory.create_stemmer()
+        
+        # Initialize Stopword Remover with negation words excluded
+        from Sastrawi.StopWordRemover.StopWordRemoverFactory import StopWordRemoverFactory, StopWordRemover, ArrayDictionary
         stopword_factory = StopWordRemoverFactory()
-        self.stopword_remover = stopword_factory.create_stop_word_remover()
+        default_stopwords = stopword_factory.get_stop_words()
+        
+        # Exclude negation words from being removed as stopwords
+        custom_stopwords = [w for w in default_stopwords if w not in self.negation_words_id]
+        dictionary = ArrayDictionary(custom_stopwords)
+        self.stopword_remover = StopWordRemover(dictionary)
         logger.info("Sastrawi berhasil diinisialisasi.")
 
     def preprocess_text(self, text: str) -> str:
@@ -174,16 +186,29 @@ class LexiconSentimentAnalyzer:
         """
         Analyzes the sentiment of a text based on lexicon matching.
         It dynamically determines the language based on which lexicon matches more tokens.
+        Supports negation handling (reversing score if negation word is found within preceding window of 2 words).
         Returns: (sentiment, score, cleaned_text, detected_lang)
         """
+        negation_window = 2
+
         # 1. Evaluate as English
         cleaned_en = self.preprocess_text_en(text)
         tokens_en = cleaned_en.split()
         score_en = 0.0
         matches_en = 0
-        for token in tokens_en:
+        for idx, token in enumerate(tokens_en):
             if token in self.en_lexicon:
-                score_en += self.en_lexicon[token]
+                token_score = self.en_lexicon[token]
+                # Check for negation in preceding window
+                negated = False
+                start_win = max(0, idx - negation_window)
+                for j in range(start_win, idx):
+                    if tokens_en[j] in self.negation_words_en:
+                        negated = True
+                        break
+                if negated:
+                    token_score = -token_score
+                score_en += token_score
                 matches_en += 1
 
         # 2. Evaluate as Indonesian
@@ -191,9 +216,19 @@ class LexiconSentimentAnalyzer:
         tokens_id = cleaned_id.split()
         score_id = 0.0
         matches_id = 0
-        for token in tokens_id:
+        for idx, token in enumerate(tokens_id):
             if token in self.id_lexicon:
-                score_id += self.id_lexicon[token]
+                token_score = self.id_lexicon[token]
+                # Check for negation in preceding window
+                negated = False
+                start_win = max(0, idx - negation_window)
+                for j in range(start_win, idx):
+                    if tokens_id[j] in self.negation_words_id:
+                        negated = True
+                        break
+                if negated:
+                    token_score = -token_score
+                score_id += token_score
                 matches_id += 1
 
         # Determine dominant language
