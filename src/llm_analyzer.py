@@ -100,8 +100,11 @@ class LLMSentimentAnalyzer:
             return self._fallback_single(comments)
 
         try:
-            # Clean response from markdown blocks if any
+            import re
+            # Clean response from markdown blocks and thought blocks if any
             clean_response = raw_response.strip()
+            # Strip reasoning process tags (<thought>...</thought>)
+            clean_response = re.sub(r'<thought>.*?</thought>', '', clean_response, flags=re.DOTALL).strip()
             if clean_response.startswith("```json"):
                 clean_response = clean_response[7:]
             if clean_response.endswith("```"):
@@ -155,7 +158,9 @@ class LLMSentimentAnalyzer:
         ]
         
         response = self._call_nvidia_api(messages)
-        sentiment = response.lower().strip()
+        import re
+        clean_response = re.sub(r'<thought>.*?</thought>', '', response, flags=re.DOTALL).strip()
+        sentiment = clean_response.lower().strip()
         
         if sentiment in ["positif", "negatif", "netral"]:
             return sentiment

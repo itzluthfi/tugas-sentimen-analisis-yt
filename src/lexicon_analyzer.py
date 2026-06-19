@@ -11,31 +11,34 @@ from src.normalizer import normalize_slang
 
 logger = logging.getLogger(__name__)
 
-# URLs to download the InSet lexicon files
+# URLs to download the lexicon files
 POSITIVE_LEXICON_URL = "https://raw.githubusercontent.com/fajri91/InSet/master/positive.tsv"
 NEGATIVE_LEXICON_URL = "https://raw.githubusercontent.com/fajri91/InSet/master/negative.tsv"
+VADER_LEXICON_URL = "https://raw.githubusercontent.com/cjhutto/vaderSentiment/master/vaderSentiment/vader_lexicon.txt"
 
 class LexiconSentimentAnalyzer:
     def __init__(self):
-        self.lexicon = {}
+        self.id_lexicon = {}
+        self.en_lexicon = {}
         self.stemmer = None
         self.stopword_remover = None
         
         # Ensure lexicon directory exists and files are downloaded
         self._ensure_lexicon_files()
-        # Load lexicon into memory
-        self._load_lexicon()
-        # Initialize Sastrawi tools
+        # Load lexicons into memory
+        self._load_lexicons()
+        # Initialize Sastrawi tools for Indonesian
         self._init_sastrawi()
 
     def _ensure_lexicon_files(self):
         """
-        Downloads InSet positive and negative lexicon files if they do not exist.
+        Downloads positive, negative, and English VADER lexicon files if they do not exist.
         """
         os.makedirs(LEXICON_DIR, exist_ok=True)
         
         pos_path = os.path.join(LEXICON_DIR, "positive.tsv")
         neg_path = os.path.join(LEXICON_DIR, "negative.tsv")
+        en_path = os.path.join(LEXICON_DIR, "vader_lexicon.txt")
         
         if not os.path.exists(pos_path):
             logger.info("Mengunduh positive.tsv dari fajri91/InSet...")
@@ -45,139 +48,149 @@ class LexiconSentimentAnalyzer:
             logger.info("Mengunduh negative.tsv dari fajri91/InSet...")
             urllib.request.urlretrieve(NEGATIVE_LEXICON_URL, neg_path)
 
-    def _load_lexicon(self):
+        if not os.path.exists(en_path):
+            logger.info("Mengunduh vader_lexicon.txt dari cjhutto/vaderSentiment...")
+            urllib.request.urlretrieve(VADER_LEXICON_URL, en_path)
+
+    def _load_lexicons(self):
         """
-        Loads the TSV lexicon files into a single lookup dictionary.
+        Loads the TSV and TXT lexicon files into lookup dictionaries.
         """
         pos_path = os.path.join(LEXICON_DIR, "positive.tsv")
         neg_path = os.path.join(LEXICON_DIR, "negative.tsv")
+        en_path = os.path.join(LEXICON_DIR, "vader_lexicon.txt")
         
-        # Load positive lexicon
+        # Load Indonesian positive lexicon
         try:
             df_pos = pd.read_csv(pos_path, sep="\t")
             for _, row in df_pos.iterrows():
                 word = str(row["word"]).strip().lower()
                 weight = float(row["weight"])
-                # Positive weights should be positive
-                self.lexicon[word] = abs(weight)
+                self.id_lexicon[word] = abs(weight)
         except Exception as e:
             logger.error(f"Gagal memuat positive.tsv: {e}")
             
-        # Load negative lexicon
+        # Load Indonesian negative lexicon
         try:
             df_neg = pd.read_csv(neg_path, sep="\t")
             for _, row in df_neg.iterrows():
                 word = str(row["word"]).strip().lower()
                 weight = float(row["weight"])
-                # Negative weights should be negative
-                self.lexicon[word] = -abs(weight)
+                self.id_lexicon[word] = -abs(weight)
         except Exception as e:
             logger.error(f"Gagal memuat negative.tsv: {e}")
             
-        logger.info(f"Berhasil memuat {len(self.lexicon)} kata ke dalam kamus lexicon.")
+        # Load English VADER lexicon
+        try:
+            with open(en_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    parts = line.strip().split("\t")
+                    if len(parts) >= 2:
+                        word = parts[0].strip().lower()
+                        weight = float(parts[1])
+                        self.en_lexicon[word] = weight
+            logger.info(f"Berhasil memuat {len(self.en_lexicon)} kata ke dalam kamus English lexicon.")
+        except Exception as e:
+            logger.error(f"Gagal memuat vader_lexicon.txt: {e}")
+            
+        logger.info(f"Berhasil memuat {len(self.id_lexicon)} kata ke dalam kamus Indonesian lexicon.")
 
     def _init_sastrawi(self):
         """
         Initializes PySastrawi stemmer and stopword remover.
         """
-        logger.info("Menginisialisasi Sastrawi Stemmer dan StopWordRemover (ini memerlukan waktu beberapa detik)...")
-        
-        # Create stemmer
+        logger.info("Menginisialisasi Sastrawi Stemmer dan StopWordRemover...")
         stemmer_factory = StemmerFactory()
         self.stemmer = stemmer_factory.create_stemmer()
-        
-        # Create stopword remover
         stopword_factory = StopWordRemoverFactory()
         self.stopword_remover = stopword_factory.create_stop_word_remover()
-        
         logger.info("Sastrawi berhasil diinisialisasi.")
 
     def preprocess_text(self, text: str) -> str:
         """
-        Cleans and preprocesses Indonesian text:
-        1. Case folding (lowercase)
-        2. Remove links, usernames, hashtags, emojis, punctuation, numbers
-        3. Slang normalization
-        4. Sastrawi stopword removal
-        5. Sastrawi stemming
+        Cleans and preprocesses Indonesian text.
         """
         if not text:
             return ""
-            
-        # 1. Case folding
+        
+        # Case folding
         text = text.lower()
         
-        # 2. Cleaning:
-        # Remove URLs
+        # Cleaning URLs, mentions, hashtags, non-ascii, numbers, punctuation
         text = re.sub(r"https?://\S+|www\.\S+", "", text)
-        # Remove mentions/usernames (e.g. @username)
         text = re.sub(r"@\w+", "", text)
-        # Remove hashtags
         text = re.sub(r"#\w+", "", text)
-        # Remove emojis and non-ascii characters
         text = text.encode("ascii", "ignore").decode("ascii")
-        # Remove numbers
         text = re.sub(r"\d+", "", text)
-        # Remove extra whitespaces and punctuation
         text = re.sub(r"[^\w\s]", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
         
-        # 3. Slang normalization
+        # Slang normalization
         text = normalize_slang(text)
         
-        # 4. Stopword removal (Sastrawi)
+        # Stopword removal
         text = self.stopword_remover.remove(text)
         
-        # 5. Stemming (Sastrawi)
+        # Stemming
         text = self.stemmer.stem(text)
         
         return text
 
-    def analyze_sentiment(self, text: str) -> tuple[str, float, str]:
+    def preprocess_text_en(self, text: str) -> str:
+        """
+        Cleans and preprocesses English text.
+        """
+        if not text:
+            return ""
+        
+        # Case folding
+        text = text.lower()
+        
+        # Cleaning URLs, mentions, hashtags, non-ascii, numbers, punctuation
+        text = re.sub(r"https?://\S+|www\.\S+", "", text)
+        text = re.sub(r"@\w+", "", text)
+        text = re.sub(r"#\w+", "", text)
+        text = text.encode("ascii", "ignore").decode("ascii")
+        text = re.sub(r"\d+", "", text)
+        text = re.sub(r"[^\w\s]", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        
+        return text
+
+    def analyze_sentiment(self, text: str, lang: str = "id") -> tuple[str, float, str]:
         """
         Analyzes the sentiment of a text based on lexicon matching.
-        Returns:
-            - sentiment: "positif", "negatif", or "netral"
-            - score: the sum of lexicon weights
-            - cleaned_text: the text after preprocessing
+        lang can be "id" or "en".
         """
-        cleaned_text = self.preprocess_text(text)
+        if lang == "en":
+            cleaned_text = self.preprocess_text_en(text)
+            lexicon = self.en_lexicon
+        else:
+            cleaned_text = self.preprocess_text(text)
+            lexicon = self.id_lexicon
+            
         tokens = cleaned_text.split()
-        
         score = 0.0
-        matched_words = []
         
         for token in tokens:
-            if token in self.lexicon:
-                score += self.lexicon[token]
-                matched_words.append(f"{token}({self.lexicon[token]})")
+            if token in lexicon:
+                score += lexicon[token]
                 
-        if score > 0:
+        if score > 0.05:  # small positive threshold
             sentiment = "positif"
-        elif score < 0:
+        elif score < -0.05:  # small negative threshold
             sentiment = "negatif"
         else:
             sentiment = "netral"
             
-        # Logging details for debug if needed
-        # logger.debug(f"Tokens: {tokens} | Matched: {matched_words} | Score: {score}")
-        
         return sentiment, score, cleaned_text
 
 if __name__ == "__main__":
-    # Test the analyzer
     logging.basicConfig(level=logging.INFO)
     analyzer = LexiconSentimentAnalyzer()
     
-    test_sentences = [
-        "Keren banget videonya! Penjelasannya sangat jelas dan mudah dipahami.",
-        "Jelek sekali editannya, bikin pusing dan buang-buang waktu saja.",
-        "Biasa saja sih, tidak ada yang spesial dari konten ini.",
-        "Gpp lah yg penting udah berusaha bikin konten kreatif mantap."
-    ]
+    test_id = "Keren banget videonya! Penjelasannya sangat jelas."
+    test_en = "This video is absolutely amazing! The explanation is very clear."
     
-    for sentence in test_sentences:
-        sent, score, clean = analyzer.analyze_sentiment(sentence)
-        print(f"\nOriginal: {sentence}")
-        print(f"Cleaned : {clean}")
-        print(f"Hasil   : {sent} (Score: {score})")
+    print(analyzer.analyze_sentiment(test_id, "id"))
+    print(analyzer.analyze_sentiment(test_en, "en"))
