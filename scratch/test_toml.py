@@ -1,9 +1,15 @@
+import toml
+
+toml_str = """
+APP_MODE = "production"
+NVIDIA_API_KEY = "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"
+
 [connections.gsheets]
 spreadsheet = "https://docs.google.com/spreadsheets/d/1KvrFlNj3czRAEAmPzvsnKD6mqamWJvb6LpzlV1tuwyo/edit?usp=sharing"
 type = "service_account"
 project_id = "streamlint-py"
 private_key_id = "be4126b02416f69929f1531b67c225c0f4ffd681"
-private_key = """-----BEGIN PRIVATE KEY-----
+private_key = \"\"\"-----BEGIN PRIVATE KEY-----
 MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDN18ERPB7b8F8t
 prMnRFlg+ednIBfAtkSBr2E966kXKItWgn9NxoA1bCXeJ0guMayvl8aJL4K0FAJD
 SYt/2h8/CsMGzY8nuHDeILWhnpgIzPB1fGyrBnG6OXUFcj4oZYnirEpXPiFTsI5E
@@ -30,10 +36,18 @@ LshYVRWnkEa2t3HB5oJEOzjaX0S4sax9a6mLt24M2kYtUk1MZLh9EiumHSRCBXC9
 QZ7ypL6XBJGxIgnQorE2gHhG/nLE84D3fOpGzEQKiVW7cVNTxf7Xeqpg9buYJ/ip
 qkDkKZyoFQmbMRM672Xsanlm9nJ5L/eVD9WXzKrmIQ/tBu2CT/UAuiRCpm4HdzkB
 IY9LL4Ana9D+yCk1BEktHV9p
------END PRIVATE KEY-----"""
+-----END PRIVATE KEY-----\"\"\"
 client_email = "stki-878@streamlint-py.iam.gserviceaccount.com"
 client_id = "113302348476513188096"
 auth_uri = "https://accounts.google.com/o/oauth2/auth"
 token_uri = "https://oauth2.googleapis.com/token"
 auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
 client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/stki-878%40streamlint-py.iam.gserviceaccount.com"
+"""
+
+try:
+    data = toml.loads(toml_str)
+    print("Parsed successfully!")
+    print("Private key starts with:", data["connections"]["gsheets"]["private_key"][:30])
+except Exception as e:
+    print("TOML Parse Error:", e)
