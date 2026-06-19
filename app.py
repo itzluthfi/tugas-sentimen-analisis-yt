@@ -200,6 +200,16 @@ def convert_df_to_excel(df, video_title, video_url):
         zebra_fill = PatternFill(start_color='F2F4F8', end_color='F2F4F8', fill_type='solid') # Alternating light gray/blue
         white_fill = PatternFill(start_color='FFFFFF', end_color='FFFFFF', fill_type='solid')
         
+        # Soft fills and colors for sentiment states
+        positif_fill = PatternFill(start_color='C6EFCE', end_color='C6EFCE', fill_type='solid') # Light Green
+        positif_font = Font(name='Arial', size=10, color='006100', bold=True)
+        
+        negatif_fill = PatternFill(start_color='FFC7CE', end_color='FFC7CE', fill_type='solid') # Light Red
+        negatif_font = Font(name='Arial', size=10, color='9C0006', bold=True)
+        
+        netral_fill = PatternFill(start_color='E2E3E5', end_color='E2E3E5', fill_type='solid')  # Light Gray
+        netral_font = Font(name='Arial', size=10, color='383D41', bold=False)
+        
         thin_border = Border(
             left=Side(style='thin', color='D3D3D3'),
             right=Side(style='thin', color='D3D3D3'),
@@ -234,6 +244,19 @@ def convert_df_to_excel(df, video_title, video_url):
                     cell.alignment = align_center
                 else:
                     cell.alignment = align_left
+                    
+                # Apply conditional formatting for sentiment columns
+                if col_name in ["Sentimen Lexicon", "Sentimen LLM", "Ground Truth"]:
+                    val_lower = str(cell.value or "").strip().lower()
+                    if val_lower == "positif":
+                        cell.fill = positif_fill
+                        cell.font = positif_font
+                    elif val_lower == "negatif":
+                        cell.fill = negatif_fill
+                        cell.font = negatif_font
+                    elif val_lower == "netral":
+                        cell.fill = netral_fill
+                        cell.font = netral_font
                 
                 # Estimate necessary row height dynamically by analyzing wrapped lines
                 val = str(cell.value or "")
@@ -385,12 +408,42 @@ def convert_df_to_pdf(df, video_title, video_url):
         ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')), # Light gray gridlines
     ]
     
-    # Apply zebra-striping rows
+    # Apply zebra-striping rows and conditional background colors for sentiment columns
     for r in range(1, len(table_data)):
         bg_color = colors.HexColor('#F8FAFC') if r % 2 == 0 else colors.white
         t_style.append(('BACKGROUND', (0, r), (-1, r), bg_color))
         t_style.append(('TOPPADDING', (0, r), (-1, r), 5))
         t_style.append(('BOTTOMPADDING', (0, r), (-1, r), 5))
+        
+        # Get matching DataFrame row (header is row 0 in table_data)
+        row = df.iloc[r - 1]
+        
+        # Lexicon Sentiment (Column index 4)
+        lex_val = str(row.get("Lexicon Sentiment", "")).strip().lower()
+        if lex_val == "positif":
+            t_style.append(('BACKGROUND', (4, r), (4, r), colors.HexColor('#C6EFCE')))
+        elif lex_val == "negatif":
+            t_style.append(('BACKGROUND', (4, r), (4, r), colors.HexColor('#FFC7CE')))
+        elif lex_val == "netral":
+            t_style.append(('BACKGROUND', (4, r), (4, r), colors.HexColor('#E2E3E5')))
+            
+        # LLM Sentiment (Column index 5)
+        llm_val = str(row.get("LLM Sentiment", "")).strip().lower()
+        if llm_val == "positif":
+            t_style.append(('BACKGROUND', (5, r), (5, r), colors.HexColor('#C6EFCE')))
+        elif llm_val == "negatif":
+            t_style.append(('BACKGROUND', (5, r), (5, r), colors.HexColor('#FFC7CE')))
+        elif llm_val == "netral":
+            t_style.append(('BACKGROUND', (5, r), (5, r), colors.HexColor('#E2E3E5')))
+            
+        # Ground Truth (Column index 6)
+        gt_val = str(row.get("Ground Truth", "")).strip().lower()
+        if gt_val == "positif":
+            t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#C6EFCE')))
+        elif gt_val == "negatif":
+            t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#FFC7CE')))
+        elif gt_val == "netral":
+            t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#E2E3E5')))
         
     t.setStyle(TableStyle(t_style))
     story.append(t)
@@ -400,10 +453,10 @@ def convert_df_to_pdf(df, video_title, video_url):
     return output.getvalue()
 
 # Sidebar Navigation Menu
-st.sidebar.title("🧭 Navigasi Menu")
+st.sidebar.title(":material/explore: Navigasi Menu")
 menu_selection = st.sidebar.radio(
     "Pilih Halaman:",
-    options=["🔍 Analisis Video Tunggal", "📊 Analisis Perbandingan Global"],
+    options=["Analisis Video Tunggal", "Analisis Perbandingan Global"],
     index=0
 )
 st.sidebar.markdown("---")
@@ -475,7 +528,7 @@ def detect_language_from_title(title):
     except Exception:
         return "id"
 
-if menu_selection == "🔍 Analisis Video Tunggal":
+if menu_selection == "Analisis Video Tunggal":
     # Sidebar Config
     st.sidebar.title(":material/settings: Setelan SEMANTIKA")
     st.sidebar.markdown("---")
@@ -759,15 +812,15 @@ if menu_selection == "🔍 Analisis Video Tunggal":
     else:
         st.sidebar.info("Belum ada riwayat analisis.")
 else:
-    # menu_selection == "📊 Analisis Perbandingan Global"
-    st.sidebar.title("📊 Perbandingan Global")
+    # menu_selection == "Analisis Perbandingan Global"
+    st.sidebar.title(":material/analytics: Perbandingan Global")
     st.sidebar.markdown("---")
     st.sidebar.info("Filter video dan toggle riwayat dikelola langsung pada panel di halaman utama.")
 
 # Info Metodologi di Sidebar (Pojok Halaman)
 st.sidebar.markdown("---")
 methodology_md = """
-### ℹ️ Metodologi: Lexicon vs LLM
+### :material/info: Metodologi: Lexicon vs LLM
 
 #### 1. Lexicon-based (Kamus Kata)
 *   **Cara kerja:** Menjumlahkan skor/bobot sentimen kata demi kata berdasarkan kamus kosakata (*InSet* untuk ID / *VADER* untuk EN).
@@ -781,13 +834,13 @@ methodology_md = """
 """
 
 if hasattr(st, "popover"):
-    with st.sidebar.popover("ℹ️ Info Metodologi (Lexicon vs LLM)", use_container_width=True):
+    with st.sidebar.popover(":material/info: Info Metodologi (Lexicon vs LLM)", use_container_width=True):
         st.markdown(methodology_md)
 else:
-    with st.sidebar.expander("ℹ️ Info Metodologi (Lexicon vs LLM)"):
+    with st.sidebar.expander(":material/info: Info Metodologi (Lexicon vs LLM)"):
         st.markdown(methodology_md)
 
-if menu_selection == "📊 Analisis Perbandingan Global":
+if menu_selection == "Analisis Perbandingan Global":
     st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Perbandingan Global</h1>", unsafe_allow_html=True)
     st.markdown("Halaman analisis akumulatif yang menggabungkan seluruh atau sebagian riwayat video untuk perbandingan akurasi jangka panjang.")
     st.markdown("---")
@@ -807,7 +860,7 @@ if menu_selection == "📊 Analisis Perbandingan Global":
     st.session_state.active_global_files = [f for f in st.session_state.active_global_files if f in history_files]
     
     # Tampilkan expander filter video di halaman utama
-    with st.expander("⚙️ Filter Pilihan Video (Toggle Aktivasi)", expanded=True):
+    with st.expander(":material/settings: Filter Pilihan Video (Toggle Aktivasi)", expanded=True):
         st.markdown("<small>Pilih video riwayat yang ingin Anda sertakan dalam analisis dan grafik perbandingan global:</small>", unsafe_allow_html=True)
         
         # Tombol pintasan Cepat
@@ -839,7 +892,7 @@ if menu_selection == "📊 Analisis Perbandingan Global":
                 is_checked = h_file in st.session_state.active_global_files
                 
                 with cols[col_idx]:
-                    checked = st.checkbox(f"🎬 {display_name}", value=is_checked, key=f"chk_glob_{h_file}")
+                    checked = st.checkbox(f":material/movie: {display_name}", value=is_checked, key=f"chk_glob_{h_file}")
                     if checked:
                         selected_global_files.append(h_file)
             
@@ -959,7 +1012,7 @@ if menu_selection == "📊 Analisis Perbandingan Global":
                 st.warning("Belum ada data Ground Truth yang diisi di seluruh video yang dipilih. Metrik komparasi tidak dapat ditampilkan.")
             else:
                 # Plot global donut charts
-                st.subheader("📊 Sebaran Sentimen Akumulatif")
+                st.subheader(":material/pie_chart: Sebaran Sentimen Akumulatif")
                 
                 y_true_g = df_global_eval["Ground Truth"].str.strip().str.lower()
                 y_lex_g = df_global_eval["Lexicon Sentiment"].str.strip().str.lower()
@@ -1124,37 +1177,70 @@ if st.session_state.df is not None:
     with col_hdr2:
         st.markdown(f":material/neurology: **Model LLM Aktif:** `{st.session_state.llm_model}`")
     with col_hdr3:
-        lang_label = "Inggris (EN) 🇺🇸" if st.session_state.detected_lang == "en" else "Indonesia (ID) 🇮🇩"
+        lang_label = "Inggris (EN)" if st.session_state.detected_lang == "en" else "Indonesia (ID)"
         st.markdown(f":material/translate: **Bahasa Terdeteksi:** `{lang_label}`")
     
     st.markdown("---")
     
-    st.subheader(":material/table_chart: Tabel Komentar & Penentuan Ground Truth")
-    st.info("Instruksi: Silakan klik dua kali pada kolom Ground Truth untuk menentukan sentimen sebenarnya (positif, negatif, netral) menggunakan dropdown. Grafik dan poin performa di bawah akan ter-update secara otomatis.", icon=":material/info:")
+    tab_view, tab_edit = st.tabs([":material/visibility: Tampilan Tabel Berwarna", ":material/edit: Edit Ground Truth"])
     
     display_df = st.session_state.df.copy()
     
-    edited_df = st.data_editor(
-        display_df,
-        column_config={
-            "Ground Truth": st.column_config.SelectboxColumn(
-                "Ground Truth",
-                help="Sentimen sebenarnya yang ditentukan oleh Anda",
-                options=["positif", "negatif", "netral", ""],
-                required=False
-            ),
-            "No": st.column_config.NumberColumn("No", width="small", disabled=True),
-            "Author": st.column_config.TextColumn("Penulis", width="medium", disabled=True),
-            "Original Comment": st.column_config.TextColumn("Komentar Asli", width="large", disabled=True),
-            "Cleaned Comment": st.column_config.TextColumn("Komentar Bersih (Stemmed)", width="medium", disabled=True),
-            "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small", disabled=True),
-            "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small", disabled=True),
-        },
-        column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "LLM Sentiment", "Ground Truth"],
-        use_container_width=True,
-        key="data_editor",
-        num_rows="fixed"
-    )
+    with tab_view:
+        def style_sentiment(val):
+            val_lower = str(val).strip().lower()
+            if val_lower == "positif":
+                return "background-color: #C6EFCE; color: #006100; font-weight: bold;"
+            elif val_lower == "negatif":
+                return "background-color: #FFC7CE; color: #9C0006; font-weight: bold;"
+            elif val_lower == "netral":
+                return "background-color: #E2E3E5; color: #383D41;"
+            return ""
+            
+        if hasattr(display_df.style, "map"):
+            styled_df = display_df.style.map(style_sentiment, subset=["Lexicon Sentiment", "LLM Sentiment", "Ground Truth"])
+        else:
+            styled_df = display_df.style.applymap(style_sentiment, subset=["Lexicon Sentiment", "LLM Sentiment", "Ground Truth"])
+            
+        st.dataframe(
+            styled_df,
+            column_config={
+                "No": st.column_config.NumberColumn("No", width="small"),
+                "Author": st.column_config.TextColumn("Penulis", width="medium"),
+                "Original Comment": st.column_config.TextColumn("Komentar Asli", width="large"),
+                "Cleaned Comment": st.column_config.TextColumn("Komentar Bersih (Stemmed)", width="medium"),
+                "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small"),
+                "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small"),
+                "Ground Truth": st.column_config.TextColumn("Ground Truth", width="small"),
+            },
+            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "LLM Sentiment", "Ground Truth"],
+            use_container_width=True,
+            hide_index=True
+        )
+        
+    with tab_edit:
+        st.info("Gunakan tabel di bawah ini untuk menentukan sentimen sebenarnya (Ground Truth) lewat dropdown pilihan.", icon=":material/info:")
+        edited_df = st.data_editor(
+            display_df,
+            column_config={
+                "Ground Truth": st.column_config.SelectboxColumn(
+                    "Ground Truth",
+                    help="Sentimen sebenarnya yang ditentukan oleh Anda",
+                    options=["positif", "negatif", "netral", ""],
+                    required=False
+                ),
+                "No": st.column_config.NumberColumn("No", width="small", disabled=True),
+                "Author": st.column_config.TextColumn("Penulis", width="medium", disabled=True),
+                "Original Comment": st.column_config.TextColumn("Komentar Asli", width="large", disabled=True),
+                "Cleaned Comment": st.column_config.TextColumn("Komentar Bersih (Stemmed)", width="medium", disabled=True),
+                "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small", disabled=True),
+                "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small", disabled=True),
+            },
+            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "LLM Sentiment", "Ground Truth"],
+            use_container_width=True,
+            key="data_editor",
+            num_rows="fixed"
+        )
     
     # Auto-save changes
     if not edited_df.equals(st.session_state.df):
@@ -1275,7 +1361,7 @@ if st.session_state.df is not None:
         # Point Rules Explanation
         st.markdown("""
         <div class="info-box">
-            <strong>ℹ️ Sistem Poin Komparasi SEMANTIKA:</strong><br/>
+            <strong>Sistem Poin Komparasi SEMANTIKA:</strong><br/>
             Sistem poin di atas dihitung dengan ketentuan:
             <ul>
                 <li>Setiap data Ground Truth yang bernilai <strong>positif</strong> atau <strong>negatif</strong> akan dievaluasi.</li>
@@ -1364,14 +1450,14 @@ if st.session_state.df is not None:
             # Display metrics columns
             col_m1, col_m2 = st.columns(2)
             with col_m1:
-                st.markdown("#### 📘 Performa Lexicon (Sastrawi + InSet)")
+                st.markdown("#### :material/book: Performa Lexicon (Sastrawi + InSet)")
                 st.write(f"- **Accuracy (Akurasi)**: {lex_acc * 100:.2f}%")
                 st.write(f"- **Precision (Presisi)**: {lex_prec * 100:.2f}%")
                 st.write(f"- **Recall (Sensitivitas)**: {lex_rec * 100:.2f}%")
                 st.write(f"- **F1-Score**: {lex_f1 * 100:.2f}%")
                 
             with col_m2:
-                st.markdown(f"#### 🟢 Performa LLM ({st.session_state.llm_model.split('/')[-1]})")
+                st.markdown(f"#### :material/psychology: Performa LLM ({st.session_state.llm_model.split('/')[-1]})")
                 st.write(f"- **Accuracy (Akurasi)**: {llm_acc * 100:.2f}%")
                 st.write(f"- **Precision (Presisi)**: {llm_prec * 100:.2f}%")
                 st.write(f"- **Recall (Sensitivitas)**: {llm_rec * 100:.2f}%")
