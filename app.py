@@ -20,10 +20,21 @@ from sklearn.metrics import (
     ConfusionMatrixDisplay
 )
 
-from src.config import OUTPUT_FILE, YOUTUBE_VIDEO_URL, MAX_COMMENTS, HISTORY_DIR
+from src.config import OUTPUT_FILE, YOUTUBE_VIDEO_URL, MAX_COMMENTS, HISTORY_DIR, APP_MODE
 from src.downloader import fetch_youtube_comments, get_video_title, extract_video_id
 from src.lexicon_analyzer import LexiconSentimentAnalyzer
 from src.llm_analyzer import LLMSentimentAnalyzer
+
+# Conditional GSheets Connection for Production Mode
+conn = None
+if APP_MODE == "production":
+    try:
+        from streamlit_gsheets import GSheetsConnection
+        conn = st.connection("gsheets", type=GSheetsConnection)
+    except Exception as e:
+        # Display warning if the spreadsheet fails to load
+        st.warning(f"Gagal menghubungkan ke Google Sheets: {e}")
+
 
 # Set Streamlit Page Config
 st.set_page_config(
@@ -461,10 +472,79 @@ menu_selection = st.sidebar.radio(
 )
 st.sidebar.markdown("---")
 
+def load_all_gsheets_data():
+    """
+    Mengambil seluruh data riwayat sentimen dari worksheet Google Sheets 'Database_Sentimen'.
+    """
+    cols = ["Video ID", "Video Title", "Video URL", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Model", "Language", "Ground Truth"]
+    if APP_MODE != "production" or conn is None:
+        return pd.DataFrame(columns=cols)
+        
+    try:
+        df = conn.read(worksheet="Database_Sentimen", ttl="0")
+        if df is not None and not df.empty:
+            for col in cols:
+                if col not in df.columns:
+                    df[col] = ""
+            return df[cols]
+    except Exception:
+        pass
+    return pd.DataFrame(columns=cols)
+
+def save_to_gsheets(df_to_save):
+    """
+    Menyimpan DataFrame secara penuh kembali ke worksheet Google Sheets 'Database_Sentimen'.
+    """
+    if APP_MODE != "production" or conn is None:
+        return
+        
+    try:
+        df_clean = df_to_save.copy()
+        for col in df_clean.columns:
+            df_clean[col] = df_clean[col].fillna("").astype(str)
+        conn.update(worksheet="Database_Sentimen", data=df_clean)
+    except Exception as e:
+        st.error(f"Gagal sinkronisasi ke Google Sheets: {e}")
+
+def sync_video_to_gsheets(video_id, video_title, video_url, df_video):
+    """
+    Menambahkan/memperbarui data hasil analisis video tertentu ke master Google Sheets.
+    """
+    if APP_MODE != "production" or conn is None:
+        return
+        
+    df_all = load_all_gsheets_data()
+    
+    # Hapus baris yang memiliki Video ID yang sama agar tidak duplikat
+    if not df_all.empty:
+        df_all = df_all[df_all["Video ID"] != video_id]
+        
+    new_rows = []
+    for _, row in df_video.iterrows():
+        new_rows.append({
+            "Video ID": video_id,
+            "Video Title": video_title,
+            "Video URL": video_url,
+            "Comment ID": row["Comment ID"] if "Comment ID" in row else row.get("comment_id", ""),
+            "Author": row["Author"] if "Author" in row else row.get("author", ""),
+            "Original Comment": row["Original Comment"] if "Original Comment" in row else row.get("original_comment", ""),
+            "Cleaned Comment": row["Cleaned Comment"] if "Cleaned Comment" in row else row.get("cleaned_comment", ""),
+            "Lexicon Sentiment": row["Lexicon Sentiment"] if "Lexicon Sentiment" in row else row.get("lexicon_sentiment", ""),
+            "Lexicon Score": row["Lexicon Score"] if "Lexicon Score" in row else row.get("lexicon_score", ""),
+            "LLM Sentiment": row["LLM Sentiment"] if "LLM Sentiment" in row else row.get("llm_sentiment", ""),
+            "LLM Model": row["LLM Model"] if "LLM Model" in row else st.session_state.llm_model,
+            "Language": row["Language"] if "Language" in row else st.session_state.detected_lang,
+            "Ground Truth": row.get("Ground Truth", "")
+        })
+    df_new = pd.DataFrame(new_rows)
+    
+    df_combined = pd.concat([df_all, df_new], ignore_index=True)
+    save_to_gsheets(df_combined)
+
 def get_existing_ground_truths():
     """
-    Mengambil ground truth yang sudah diisi sebelumnya dari file hasil aktif (OUTPUT_FILE)
-    maupun seluruh berkas riwayat di folder history, agar label manual tidak hilang saat refresh.
+    Mengambil ground truth yang sudah diisi sebelumnya dari file hasil aktif (OUTPUT_FILE),
+    seluruh berkas riwayat di folder history, dan database Google Sheets (jika dalam mode production).
     """
     gts = {}
     
@@ -499,7 +579,22 @@ def get_existing_ground_truths():
         except Exception:
             pass
             
+    # 3. Baca dari Google Sheets (hanya di mode production)
+    if APP_MODE == "production" and conn is not None:
+        try:
+            df_gs = load_all_gsheets_data()
+            if not df_gs.empty and "Comment ID" in df_gs.columns and "Ground Truth" in df_gs.columns:
+                df_gs = df_gs.dropna(subset=["Comment ID"])
+                for _, row in df_gs.iterrows():
+                    cid = str(row["Comment ID"]).strip()
+                    gt = str(row["Ground Truth"]).strip() if pd.notna(row["Ground Truth"]) else ""
+                    if cid and gt:
+                        gts[cid] = gt
+        except Exception:
+            pass
+            
     return gts
+
 
 def make_safe_filename(name):
     return re.sub(r'[\\/*?:"<>|]', "", name).strip()
@@ -696,6 +791,9 @@ if menu_selection == "Analisis Video Tunggal":
                             df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
                             df.to_csv(history_path, index=False, encoding="utf-8-sig")
                             
+                            if APP_MODE == "production":
+                                sync_video_to_gsheets(video_id, video_title, url_input, df)
+                            
                             st.session_state.df = df
                             st.session_state.video_title = video_title
                             st.session_state.video_url = url_input
@@ -842,22 +940,67 @@ else:
 
 if menu_selection == "Analisis Perbandingan Global":
     st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Perbandingan Global</h1>", unsafe_allow_html=True)
+    if APP_MODE == "production":
+        st.markdown(
+            '<div style="text-align: right; margin-top: -45px; margin-bottom: 20px;">'
+            '<span style="background-color: #d1fae5; color: #065f46; font-size: 0.85rem; font-weight: 700; '
+            'padding: 4px 10px; border-radius: 9999px; border: 1px solid #a7f3d0;">'
+            'Mode: Production (Cloud Sync)'
+            '</span></div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            '<div style="text-align: right; margin-top: -45px; margin-bottom: 20px;">'
+            '<span style="background-color: #fee2e2; color: #991b1b; font-size: 0.85rem; font-weight: 700; '
+            'padding: 4px 10px; border-radius: 9999px; border: 1px solid #fecaca;">'
+            'Mode: Development (Offline Lokal)'
+            '</span></div>',
+            unsafe_allow_html=True
+        )
     st.markdown("Halaman analisis akumulatif yang menggabungkan seluruh atau sebagian riwayat video untuk perbandingan akurasi jangka panjang.")
     st.markdown("---")
     
-    # Ambil daftar file riwayat yang ada
-    history_files = sorted(
-        [f for f in os.listdir(HISTORY_DIR) if f.endswith(".csv")],
-        key=lambda x: os.path.getmtime(os.path.join(HISTORY_DIR, x)),
-        reverse=True
-    )
+    # 1. Bangun dictionary riwayat (gabungan Lokal + Google Sheets)
+    history_videos = {}
+    
+    # Baca dari folder history lokal
+    if os.path.exists(HISTORY_DIR):
+        try:
+            for f in os.listdir(HISTORY_DIR):
+                if f.endswith(".csv"):
+                    fpath = os.path.join(HISTORY_DIR, f)
+                    df_temp = pd.read_csv(fpath)
+                    clean_name = f.replace(".csv", "")
+                    history_videos[clean_name] = df_temp
+        except Exception:
+            pass
+            
+    # Baca dari Google Sheets jika production
+    if APP_MODE == "production" and conn is not None:
+        try:
+            df_gs = load_all_gsheets_data()
+            if not df_gs.empty:
+                grouped = df_gs.groupby(["Video ID", "Video Title"])
+                for (vid_id, vid_title), group_df in grouped:
+                    display_name = f"[{vid_id}] {make_safe_filename(vid_title)}"
+                    local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Model", "Language", "Ground Truth"]
+                    df_temp = group_df.copy()
+                    df_temp["No"] = range(1, len(df_temp) + 1)
+                    # Filter existing columns to match local format
+                    df_temp = df_temp[[col for col in local_cols if col in df_temp.columns]]
+                    history_videos[display_name] = df_temp
+        except Exception:
+            pass
+            
+    history_keys = sorted(list(history_videos.keys()), reverse=True)
     
     # Inisialisasi daftar file aktif di session state
     if "active_global_files" not in st.session_state:
-        st.session_state.active_global_files = list(history_files)
+        st.session_state.active_global_files = list(history_keys)
         
     # Bersihkan file yang sudah dihapus dari session state
-    st.session_state.active_global_files = [f for f in st.session_state.active_global_files if f in history_files]
+    st.session_state.active_global_files = [f for f in st.session_state.active_global_files if f in history_keys]
     
     # Tampilkan expander filter video di halaman utama
     with st.expander(":material/settings: Filter Pilihan Video (Toggle Aktivasi)", expanded=True):
@@ -867,7 +1010,7 @@ if menu_selection == "Analisis Perbandingan Global":
         col_btn1, col_btn2, _ = st.columns([1.5, 1.5, 7])
         with col_btn1:
             if st.button("Pilih Semua", key="select_all_global_btn", use_container_width=True):
-                st.session_state.active_global_files = list(history_files)
+                st.session_state.active_global_files = list(history_keys)
                 st.rerun()
         with col_btn2:
             if st.button("Kosongkan Semua", key="deselect_all_global_btn", use_container_width=True):
@@ -877,10 +1020,10 @@ if menu_selection == "Analisis Perbandingan Global":
         st.markdown(" ")
         
         selected_global_files = []
-        if history_files:
+        if history_keys:
             cols = st.columns(3)
-            for idx, h_file in enumerate(history_files):
-                clean_name = h_file.replace(".csv", "")
+            for idx, h_key in enumerate(history_keys):
+                clean_name = h_key
                 match = re.match(r"^\[(.*?)\] (.*)$", clean_name)
                 display_name = match.group(2) if match else clean_name
                 
@@ -889,12 +1032,12 @@ if menu_selection == "Analisis Perbandingan Global":
                     display_name = display_name[:32] + "..."
                     
                 col_idx = idx % 3
-                is_checked = h_file in st.session_state.active_global_files
+                is_checked = h_key in st.session_state.active_global_files
                 
                 with cols[col_idx]:
-                    checked = st.checkbox(f":material/movie: {display_name}", value=is_checked, key=f"chk_glob_{h_file}")
+                    checked = st.checkbox(f":material/movie: {display_name}", value=is_checked, key=f"chk_glob_{h_key}")
                     if checked:
-                        selected_global_files.append(h_file)
+                        selected_global_files.append(h_key)
             
             st.session_state.active_global_files = selected_global_files
         else:
@@ -906,11 +1049,10 @@ if menu_selection == "Analisis Perbandingan Global":
         dfs = []
         video_accuracies = []
         
-        for h_file in selected_global_files:
-            file_path = os.path.join(HISTORY_DIR, h_file)
+        for h_key in selected_global_files:
             try:
-                df_temp = pd.read_csv(file_path)
-                clean_name = h_file.replace(".csv", "")
+                df_temp = history_videos[h_key]
+                clean_name = h_key
                 match = re.match(r"^\[(.*?)\] (.*)$", clean_name)
                 vid_title = match.group(2) if match else clean_name
                 
@@ -1165,6 +1307,24 @@ if menu_selection == "Analisis Perbandingan Global":
 
 # Main Dashboard Area (SEMANTIKA)
 st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Sentiment Analysis Dashboard</h1>", unsafe_allow_html=True)
+if APP_MODE == "production":
+    st.markdown(
+        '<div style="text-align: right; margin-top: -45px; margin-bottom: 20px;">'
+        '<span style="background-color: #d1fae5; color: #065f46; font-size: 0.85rem; font-weight: 700; '
+        'padding: 4px 10px; border-radius: 9999px; border: 1px solid #a7f3d0;">'
+        'Mode: Production (Cloud Sync)'
+        '</span></div>',
+        unsafe_allow_html=True
+    )
+else:
+    st.markdown(
+        '<div style="text-align: right; margin-top: -45px; margin-bottom: 20px;">'
+        '<span style="background-color: #fee2e2; color: #991b1b; font-size: 0.85rem; font-weight: 700; '
+        'padding: 4px 10px; border-radius: 9999px; border: 1px solid #fecaca;">'
+        'Mode: Development (Offline Lokal)'
+        '</span></div>',
+        unsafe_allow_html=True
+    )
 st.markdown("Aplikasi perbandingan performa analisis sentimen berbasis **Lexicon-based (Sastrawi + InSet)** dan **LLM-based (NVIDIA NIM Llama 3.1)**.")
 st.markdown("---")
 
@@ -1254,6 +1414,9 @@ if st.session_state.df is not None:
             history_filename = f"[{video_id}] {safe_title}.csv"
             history_path = os.path.join(HISTORY_DIR, history_filename)
             edited_df.to_csv(history_path, index=False, encoding="utf-8-sig")
+            
+            if APP_MODE == "production":
+                sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, edited_df)
             
         st.rerun()
 

@@ -8,3 +8,5 @@ matplotlib>=3.7.0
 openpyxl>=3.1.0
 streamlit>=1.25.0
 reportlab>=4.0.0
+streamlit-gsheets>=1.0.0
+
