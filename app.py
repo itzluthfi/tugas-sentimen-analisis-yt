@@ -125,6 +125,10 @@ if "youtube_url_widget" not in st.session_state:
     st.session_state.youtube_url_widget = YOUTUBE_VIDEO_URL
 if "loaded_history_file" not in st.session_state:
     st.session_state.loaded_history_file = ""
+if "lexicon_time" not in st.session_state:
+    st.session_state.lexicon_time = None
+if "llm_time" not in st.session_state:
+    st.session_state.llm_time = None
 
 # Auto-load existing results if CSV exists
 if st.session_state.df is None and os.path.exists(OUTPUT_FILE):
@@ -706,6 +710,8 @@ if menu_selection == "Analisis Video Tunggal":
                         st.session_state.df = df_loaded
                         st.session_state.video_title = video_title
                         st.session_state.video_url = url_input
+                        st.session_state.lexicon_time = None
+                        st.session_state.llm_time = None
                         st.rerun()
                     except Exception as e:
                         st.sidebar.error(f"Gagal memuat file riwayat: {e}")
@@ -735,6 +741,8 @@ if menu_selection == "Analisis Video Tunggal":
                             
                             # 3. Analyze Lexicon
                             status.write("Langkah 3/5: Menjalankan pemrosesan & skoring Lexicon...")
+                            import time
+                            start_lexicon_time = time.time()
                             lexicon_analyzer = LexiconSentimentAnalyzer()
                             processed_comments = []
                             
@@ -751,9 +759,11 @@ if menu_selection == "Analisis Video Tunggal":
                                 })
                                 if (idx + 1) % 10 == 0 or (idx + 1) == len(comments):
                                     status.write(f"   - Selesai memproses Lexicon: {idx + 1}/{len(comments)} komentar...")
+                            st.session_state.lexicon_time = time.time() - start_lexicon_time
                             
                             # 4. Analyze LLM
                             status.write(f"Langkah 4/5: Menghubungi NVIDIA NIM API ({model_input})...")
+                            start_llm_time = time.time()
                             llm_analyzer = LLMSentimentAnalyzer(model=model_input)
                             batch_size = 20
                             llm_sentiment_map = {}
@@ -765,6 +775,7 @@ if menu_selection == "Analisis Video Tunggal":
                                 batch_results = llm_analyzer.analyze_batch(batch)
                                 for r in batch_results:
                                     llm_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
+                            st.session_state.llm_time = time.time() - start_llm_time
                             
                             # 5. Combine results and map existing ground truths
                             status.write("Langkah 5/5: Menyimpan berkas hasil...")
@@ -857,6 +868,8 @@ if menu_selection == "Analisis Video Tunggal":
                 st.session_state.df = df_loaded
                 st.session_state.youtube_url_widget = new_url  # Update sidebar widget
                 st.session_state.loaded_history_file = selected_history  # Mark file as loaded
+                st.session_state.lexicon_time = None
+                st.session_state.llm_time = None
                 st.sidebar.success("Berhasil memuat data riwayat!")
                 st.rerun()
             except Exception as e:
@@ -1535,6 +1548,37 @@ if st.session_state.df is not None:
             </ul>
         </div>
         """, unsafe_allow_html=True)
+        
+        # Benchmark Waktu Eksekusi
+        st.markdown("### :material/timer: Perbandingan Kecepatan Eksekusi (Benchmark)")
+        if st.session_state.get("lexicon_time") is not None and st.session_state.get("llm_time") is not None:
+            col_bench1, col_bench2 = st.columns(2)
+            total_comments = len(st.session_state.df)
+            with col_bench1:
+                lex_t = st.session_state.lexicon_time
+                lex_avg = (lex_t / total_comments) * 1000 if total_comments > 0 else 0
+                st.metric(
+                    label="Total Durasi Analisis Lexicon (Offline/Lokal)",
+                    value=f"{lex_t:.4f} detik",
+                    delta=f"{lex_avg:.2f} ms / komentar",
+                    delta_color="normal"
+                )
+            with col_bench2:
+                llm_t = st.session_state.llm_time
+                llm_avg = (llm_t / total_comments) * 1000 if total_comments > 0 else 0
+                st.metric(
+                    label="Total Durasi Analisis LLM (NVIDIA NIM Cloud)",
+                    value=f"{llm_t:.2f} detik",
+                    delta=f"{llm_avg:.0f} ms / komentar",
+                    delta_color="inverse"
+                )
+            
+            # Persentase kecepatan
+            if lex_t > 0:
+                speedup = llm_t / lex_t
+                st.info(f":material/bolt: **Hasil Benchmark Kecepatan:** Metode Lexicon berjalan **{speedup:.1f}x lebih cepat** dibandingkan metode LLM karena diproses secara lokal tanpa latency jaringan.", icon=":material/info:")
+        else:
+            st.info("Informasi waktu eksekusi benchmark hanya tersedia untuk video yang baru dianalisis pada sesi aktif saat ini.", icon=":material/info:")
         
         # Tab Layout for Visualizations
         tab1, tab2, tab3 = st.tabs([
