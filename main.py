@@ -35,7 +35,7 @@ def main():
     
     processed_comments = []
     for c in comments:
-        sentiment, score, cleaned_text = lexicon_analyzer.analyze_sentiment(c["text"])
+        sentiment, score, cleaned_text, _ = lexicon_analyzer.analyze_sentiment(c["text"])
         processed_comments.append({
             "comment_id": c["comment_id"],
             "author": c["author"],

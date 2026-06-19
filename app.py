@@ -739,14 +739,15 @@ if menu_selection == "Analisis Video Tunggal":
                             processed_comments = []
                             
                             for idx, c in enumerate(comments):
-                                sentiment, score, cleaned_text = lexicon_analyzer.analyze_sentiment(c["text"], lang=detected_lang)
+                                sentiment, score, cleaned_text, comment_lang = lexicon_analyzer.analyze_sentiment(c["text"], default_lang=detected_lang)
                                 processed_comments.append({
                                     "comment_id": c["comment_id"],
                                     "author": c["author"],
                                     "original_comment": c["text"],
                                     "cleaned_comment": cleaned_text,
                                     "lexicon_sentiment": sentiment,
-                                    "lexicon_score": score
+                                    "lexicon_score": score,
+                                    "language": comment_lang
                                 })
                                 if (idx + 1) % 10 == 0 or (idx + 1) == len(comments):
                                     status.write(f"   - Selesai memproses Lexicon: {idx + 1}/{len(comments)} komentar...")
@@ -783,7 +784,7 @@ if menu_selection == "Analisis Video Tunggal":
                                     "Lexicon Score": c["lexicon_score"],
                                     "LLM Sentiment": llm_sentiment_map.get(cid, "netral"),
                                     "LLM Model": model_input,
-                                    "Language": detected_lang,
+                                    "Language": c["language"],
                                     "Ground Truth": gt
                                 })
                                 

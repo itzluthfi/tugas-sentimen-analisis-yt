@@ -132,7 +132,20 @@ class LexiconSentimentAnalyzer:
         text = self.stopword_remover.remove(text)
         
         # Stemming
-        text = self.stemmer.stem(text)
+        # To protect English words from Sastrawi distortion, we stem word-by-word 
+        # and skip words that are present in the English VADER lexicon.
+        words = text.split()
+        has_english = any(word in self.en_lexicon for word in words)
+        if has_english:
+            stemmed_words = []
+            for word in words:
+                if word in self.en_lexicon:
+                    stemmed_words.append(word)
+                else:
+                    stemmed_words.append(self.stemmer.stem(word))
+            text = " ".join(stemmed_words)
+        else:
+            text = self.stemmer.stem(text)
         
         return text
 
@@ -157,33 +170,60 @@ class LexiconSentimentAnalyzer:
         
         return text
 
-    def analyze_sentiment(self, text: str, lang: str = "id") -> tuple[str, float, str]:
+    def analyze_sentiment(self, text: str, default_lang: str = "id") -> tuple[str, float, str, str]:
         """
         Analyzes the sentiment of a text based on lexicon matching.
-        lang can be "id" or "en".
+        It dynamically determines the language based on which lexicon matches more tokens.
+        Returns: (sentiment, score, cleaned_text, detected_lang)
         """
-        if lang == "en":
-            cleaned_text = self.preprocess_text_en(text)
-            lexicon = self.en_lexicon
+        # 1. Evaluate as English
+        cleaned_en = self.preprocess_text_en(text)
+        tokens_en = cleaned_en.split()
+        score_en = 0.0
+        matches_en = 0
+        for token in tokens_en:
+            if token in self.en_lexicon:
+                score_en += self.en_lexicon[token]
+                matches_en += 1
+
+        # 2. Evaluate as Indonesian
+        cleaned_id = self.preprocess_text(text)
+        tokens_id = cleaned_id.split()
+        score_id = 0.0
+        matches_id = 0
+        for token in tokens_id:
+            if token in self.id_lexicon:
+                score_id += self.id_lexicon[token]
+                matches_id += 1
+
+        # Determine dominant language
+        if matches_en > matches_id:
+            detected_lang = "en"
+            score = score_en
+            cleaned_text = cleaned_en
+        elif matches_id > matches_en:
+            detected_lang = "id"
+            score = score_id
+            cleaned_text = cleaned_id
         else:
-            cleaned_text = self.preprocess_text(text)
-            lexicon = self.id_lexicon
-            
-        tokens = cleaned_text.split()
-        score = 0.0
-        
-        for token in tokens:
-            if token in lexicon:
-                score += lexicon[token]
-                
-        if score > 0.05:  # small positive threshold
+            # Fallback for ties or no matches
+            detected_lang = default_lang
+            if default_lang == "en":
+                score = score_en
+                cleaned_text = cleaned_en
+            else:
+                score = score_id
+                cleaned_text = cleaned_id
+
+        # Classify score
+        if score > 0.05:
             sentiment = "positif"
-        elif score < -0.05:  # small negative threshold
+        elif score < -0.05:
             sentiment = "negatif"
         else:
             sentiment = "netral"
-            
-        return sentiment, score, cleaned_text
+
+        return sentiment, score, cleaned_text, detected_lang
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -191,6 +231,8 @@ if __name__ == "__main__":
     
     test_id = "Keren banget videonya! Penjelasannya sangat jelas."
     test_en = "This video is absolutely amazing! The explanation is very clear."
+    test_mixed = "iPhone ini very cheap dan keren bgt"
     
     print(analyzer.analyze_sentiment(test_id, "id"))
     print(analyzer.analyze_sentiment(test_en, "en"))
+    print(analyzer.analyze_sentiment(test_mixed, "id"))
