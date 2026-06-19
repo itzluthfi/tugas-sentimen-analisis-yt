@@ -1372,9 +1372,64 @@ if st.session_state.df is not None:
     
     st.markdown("---")
     
-    # Filter mismatch
-    show_mismatch = st.checkbox(":material/compare: Hanya tampilkan data Mismatch (Lexicon vs LLM berbeda)", value=False, key="filter_mismatch")
+    # Hitung statistik kesepakatan model untuk fitur pengisian cepat
+    df_temp = st.session_state.df
+    agree_mask = df_temp["Lexicon Sentiment"] == df_temp["LLM Sentiment"]
+    total_comments = len(df_temp)
+    agreed_comments = agree_mask.sum()
+    pct_agreement = (agreed_comments / total_comments * 100) if total_comments > 0 else 0
     
+    empty_gt_mask = df_temp["Ground Truth"].isna() | (df_temp["Ground Truth"].astype(str).str.strip() == "")
+    fillable_count = (agree_mask & empty_gt_mask).sum()
+
+    # Layout penyaring dan aksi cepat
+    col_filter, col_actions = st.columns([3, 2])
+    with col_filter:
+        show_mismatch = st.checkbox(":material/compare: Hanya tampilkan data Mismatch (Lexicon vs LLM berbeda)", value=False, key="filter_mismatch")
+        st.markdown(f"Tingkat kesepakatan model (Lexicon & LLM sama): **{pct_agreement:.1f}%** ({agreed_comments}/{total_comments} komentar)")
+    with col_actions:
+        with st.expander(":material/construction: Fitur Pengisian Cepat (Quick Labeling)"):
+            st.write(f"Komentar yang bisa diisi otomatis (sepakat & kosong): **{fillable_count}**")
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                if st.button("Isi Otomatis", use_container_width=True, help="Mengisi Ground Truth kosong dengan hasil prediksi jika prediksi Lexicon dan LLM sama"):
+                    if fillable_count > 0:
+                        mask_to_fill = agree_mask & empty_gt_mask
+                        st.session_state.df.loc[mask_to_fill, "Ground Truth"] = st.session_state.df.loc[mask_to_fill, "Lexicon Sentiment"]
+                        st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+                        
+                        # Sync dengan riwayat lokal & GSheets
+                        video_id = extract_video_id(st.session_state.video_url)
+                        if video_id:
+                            safe_title = make_safe_filename(st.session_state.video_title)
+                            history_filename = f"[{video_id}] {safe_title}.csv"
+                            history_path = os.path.join(HISTORY_DIR, history_filename)
+                            st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
+                            if APP_MODE == "production":
+                                sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
+                        
+                        st.success(f"Berhasil mengisi {fillable_count} komentar!")
+                        st.rerun()
+                    else:
+                        st.info("Tidak ada data kosong yang memiliki kesepakatan model.")
+            with btn_col2:
+                if st.button("Kosongkan GT", use_container_width=True, help="Menghapus semua label Ground Truth untuk memulai dari awal"):
+                    st.session_state.df["Ground Truth"] = ""
+                    st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+                    
+                    # Sync dengan riwayat lokal & GSheets
+                    video_id = extract_video_id(st.session_state.video_url)
+                    if video_id:
+                        safe_title = make_safe_filename(st.session_state.video_title)
+                        history_filename = f"[{video_id}] {safe_title}.csv"
+                        history_path = os.path.join(HISTORY_DIR, history_filename)
+                        st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
+                        if APP_MODE == "production":
+                            sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
+                    
+                    st.success("Ground Truth dikosongkan!")
+                    st.rerun()
+
     tab_view, tab_edit = st.tabs([":material/visibility: Tampilan Tabel Berwarna", ":material/edit: Edit Ground Truth"])
     
     display_df = st.session_state.df.copy()
@@ -1437,21 +1492,21 @@ if st.session_state.df is not None:
             num_rows="fixed"
         )
     
-    # Auto-save changes
-    if not edited_df.equals(st.session_state.df):
-        st.session_state.df = edited_df.copy()
-        edited_df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+    # Auto-save changes safely by comparing edited_df to display_df, preventing loss of unrendered rows due to filtering
+    if not edited_df.equals(display_df):
+        st.session_state.df.loc[edited_df.index, "Ground Truth"] = edited_df["Ground Truth"]
+        st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
         
-        # Sync with history
+        # Sync dengan riwayat lokal & GSheets
         video_id = extract_video_id(st.session_state.video_url)
         if video_id:
             safe_title = make_safe_filename(st.session_state.video_title)
             history_filename = f"[{video_id}] {safe_title}.csv"
             history_path = os.path.join(HISTORY_DIR, history_filename)
-            edited_df.to_csv(history_path, index=False, encoding="utf-8-sig")
+            st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
             
             if APP_MODE == "production":
-                sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, edited_df)
+                sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
             
         st.rerun()
 
