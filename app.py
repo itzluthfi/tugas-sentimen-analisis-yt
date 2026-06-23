@@ -1469,7 +1469,21 @@ if st.session_state.df is not None:
     with col_hdr2:
         st.markdown(f":material/neurology: **Model LLM Aktif:** `{st.session_state.llm_model}`")
     with col_hdr3:
-        lang_label = "Inggris (EN)" if st.session_state.detected_lang == "en" else "Indonesia (ID)"
+        if "Language" in st.session_state.df.columns:
+            lang_counts = st.session_state.df["Language"].value_counts()
+            total_comments = len(st.session_state.df)
+            lang_labels = []
+            for lang, count in lang_counts.items():
+                pct = (count / total_comments * 100) if total_comments > 0 else 0
+                if str(lang).strip().lower() == "id":
+                    lang_labels.append(f"Indonesia (ID) {pct:.1f}%")
+                elif str(lang).strip().lower() == "en":
+                    lang_labels.append(f"Inggris (EN) {pct:.1f}%")
+                else:
+                    lang_labels.append(f"{str(lang).upper()} {pct:.1f}%")
+            lang_label = " & ".join(lang_labels) if lang_labels else "Indonesia (ID)"
+        else:
+            lang_label = "Inggris (EN)" if st.session_state.detected_lang == "en" else "Indonesia (ID)"
         st.markdown(f":material/translate: **Bahasa Terdeteksi:** `{lang_label}`")
     
     st.markdown("---")
