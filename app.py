@@ -708,11 +708,8 @@ if menu_selection == "Analisis Video Tunggal":
             "meta/llama-3.1-8b-instruct", 
             "meta/llama-3.1-70b-instruct", 
             "meta/llama-3.3-70b-instruct",
-            "nvidia/llama-3.1-nemotron-70b-instruct",
-            "nvidia/nemotron-4-340b-instruct",
             "deepseek-ai/deepseek-v4-flash",
-            "deepseek-ai/deepseek-v4-pro",
-            "google/gemma-3-12b-it"
+            "deepseek-ai/deepseek-v4-pro"
         ]
         default_index = 0
         if st.session_state.llm_model in options_list:
@@ -720,13 +717,10 @@ if menu_selection == "Analisis Video Tunggal":
         
         def format_model_name(model_id):
             labels = {
-                "nvidia/nemotron-4-340b-instruct": "nvidia/nemotron-4-340b-instruct (Tercanggih - 340B)",
+                "deepseek-ai/deepseek-v4-pro": "deepseek-ai/deepseek-v4-pro (Tercanggih - DeepSeek V4 Pro)",
                 "meta/llama-3.3-70b-instruct": "meta/llama-3.3-70b-instruct (Sangat Canggih - Llama 3.3)",
-                "deepseek-ai/deepseek-v4-pro": "deepseek-ai/deepseek-v4-pro (Sangat Canggih - DeepSeek V4 Pro)",
-                "nvidia/llama-3.1-nemotron-70b-instruct": "nvidia/llama-3.1-nemotron-70b-instruct (Canggih - Nemotron)",
-                "meta/llama-3.1-70b-instruct": "meta/llama-3.1-70b-instruct (Canggih)",
-                "deepseek-ai/deepseek-v4-flash": "deepseek-ai/deepseek-v4-flash (Cepat & Canggih - DeepSeek V4 Flash)",
-                "google/gemma-3-12b-it": "google/gemma-3-12b-it (Standar - Gemma 3)",
+                "meta/llama-3.1-70b-instruct": "meta/llama-3.1-70b-instruct (Canggih - Llama 3.1 70B)",
+                "deepseek-ai/deepseek-v4-flash": "deepseek-ai/deepseek-v4-flash (Cepat & Canggih)",
                 "meta/llama-3.1-8b-instruct": "meta/llama-3.1-8b-instruct (Cepat / Ringan)"
             }
             return labels.get(model_id, model_id)
