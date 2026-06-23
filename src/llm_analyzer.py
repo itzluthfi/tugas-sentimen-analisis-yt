@@ -35,21 +35,17 @@ class LLMSentimentAnalyzer:
             "stream": False
         }
         
-        try:
-            response = requests.post(self.url, json=payload, headers=headers)
-            response.raise_for_status()
-            response_json = response.json()
+        response = requests.post(self.url, json=payload, headers=headers)
+        if response.status_code != 200:
+            raise RuntimeError(f"NVIDIA NIM API Error {response.status_code}: {response.text}")
             
-            # Extract content from response
-            choices = response_json.get("choices", [])
-            if choices:
-                return choices[0].get("message", {}).get("content", "").strip()
-            return ""
-        except Exception as e:
-            logger.error(f"Gagal memanggil NVIDIA NIM API: {e}")
-            if 'response' in locals() and hasattr(response, 'text'):
-                logger.error(f"Response error detail: {response.text}")
-            return ""
+        response_json = response.json()
+        
+        # Extract content from response
+        choices = response_json.get("choices", [])
+        if choices:
+            return choices[0].get("message", {}).get("content", "").strip()
+        return ""
 
     def analyze_batch(self, comments: list[dict]) -> list[dict]:
         """
@@ -58,8 +54,7 @@ class LLMSentimentAnalyzer:
         Returns a list of dicts with 'comment_id' and 'llm_sentiment'.
         """
         if not self.api_key:
-            logger.error("NVIDIA API Key kosong. Tidak dapat melakukan analisis LLM.")
-            return [{"comment_id": c["comment_id"], "llm_sentiment": "error"} for c in comments]
+            raise ValueError("NVIDIA API Key tidak ditemukan. Silakan konfigurasi file .env Anda.")
 
         # Structure the batch content for the LLM
         formatted_comments = []
@@ -96,8 +91,7 @@ class LLMSentimentAnalyzer:
         raw_response = self._call_nvidia_api(messages)
         
         if not raw_response:
-            logger.error("Gagal mendapatkan respons dari LLM untuk batch ini.")
-            return self._fallback_single(comments)
+            raise RuntimeError("Respons dari LLM kosong.")
 
         try:
             import re
