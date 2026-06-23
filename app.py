@@ -718,10 +718,24 @@ if menu_selection == "Analisis Video Tunggal":
         if st.session_state.llm_model in options_list:
             default_index = options_list.index(st.session_state.llm_model)
         
+        def format_model_name(model_id):
+            labels = {
+                "deepseek-ai/deepseek-r1": "deepseek-ai/deepseek-r1 (Tercanggih - Reasoning)",
+                "nvidia/llama-3.1-nemotron-70b-instruct": "nvidia/llama-3.1-nemotron-70b-instruct (Sangat Canggih)",
+                "meta/llama-3.1-70b-instruct": "meta/llama-3.1-70b-instruct (Canggih)",
+                "qwen/qwen-2.5-72b-instruct": "qwen/qwen-2.5-72b-instruct (Canggih)",
+                "deepseek-ai/deepseek-r1-distill-qwen-32b": "deepseek-ai/deepseek-r1-distill-qwen-32b (Canggih & Cepat)",
+                "google/gemma-2-27b-it": "google/gemma-2-27b-it (Standar)",
+                "google/gemma-2-9b-it": "google/gemma-2-9b-it (Cepat)",
+                "meta/llama-3.1-8b-instruct": "meta/llama-3.1-8b-instruct (Cepat / Ringan)"
+            }
+            return labels.get(model_id, model_id)
+
         model_input = st.sidebar.selectbox(
             "Model LLM NVIDIA",
             options=options_list,
             index=default_index,
+            format_func=format_model_name,
             help="Pilih model NVIDIA NIM yang ingin digunakan untuk klasifikasi."
         )
         
