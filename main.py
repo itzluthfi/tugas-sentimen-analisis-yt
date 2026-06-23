@@ -42,7 +42,10 @@ def main():
             "original_comment": c["text"],
             "cleaned_comment": cleaned_text,
             "lexicon_sentiment": sentiment,
-            "lexicon_score": score
+            "lexicon_score": score,
+            "likes": c.get("likes", 0),
+            "time": c.get("time", ""),
+            "time_parsed": c.get("time_parsed", 0.0)
         })
         
     # 3. Run LLM-based analysis
@@ -71,6 +74,9 @@ def main():
             "Author": c["author"],
             "Original Comment": c["original_comment"],
             "Cleaned Comment": c["cleaned_comment"],
+            "Likes": c["likes"],
+            "Time Description": c["time"],
+            "Timestamp": c["time_parsed"],
             "Lexicon Sentiment": c["lexicon_sentiment"],
             "Lexicon Score": c["lexicon_score"],
             "LLM Sentiment": llm_sentiment_map.get(cid, "netral"),

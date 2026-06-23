@@ -11,14 +11,20 @@ Sistem ini mendukung pengoperasian hybrid dengan dua mode penyimpanan data: mode
 Sistem ini dirancang dengan fitur-fitur premium untuk kebutuhan analisis data sentimen YouTube secara komprehensif:
 
 1. **Dual-Model Sentiment Engine**: Menjalankan analisis sentimen menggunakan metode Lexicon-based dan LLM-based secara paralel untuk memberikan perbandingan performa langsung pada data komentar yang sama.
-2. **YouTube & Shorts Scraper**: Pengambilan otomatis hingga batas tertentu (default: 100 komentar) dari tautan video reguler maupun Shorts YouTube tanpa memerlukan API Key YouTube yang rumit.
-3. **Interactive Ground Truth Editor**: Dashboard menyediakan antarmuka tabel interaktif (menggunakan st.data_editor) untuk melakukan annotasi Ground Truth secara langsung di browser. Setiap pembaruan data langsung memicu perhitungan ulang metrik evaluasi secara real-time.
+2. **YouTube & Shorts Scraper**: Pengambilan otomatis komentar, nama penulis, jumlah Likes (votes), dan waktu unggah relatif serta timestamp dari tautan video reguler maupun Shorts YouTube tanpa memerlukan API Key YouTube yang rumit.
+3. **Interactive Ground Truth Editor**: Dashboard menyediakan antarmuka tabel interaktif (menggunakan st.data_editor) untuk melakukan anotasi Ground Truth secara langsung di browser. Setiap pembaruan data langsung memicu penggabungan aman ke data master dan memperbarui metrik evaluasi secara real-time.
 4. **Slang Dictionary Editor**: Fitur manajemen kamus slang langsung dari dashboard web. Pengguna dapat menambah, mengedit, atau menghapus singkatan/slang gaul internet (misal: "yg" -> "yang", "bgt" -> "banget") yang disimpan pada file konfigurasinya (lexicon/custom_slang.json) dan langsung diterapkan saat preprocessing data baru.
-5. **Penanganan Kata Negasi (Negation Handling)**: Algoritma Lexicon-based dilengkapi pendeteksi kata negasi (seperti "tidak", "bukan", "not", "no") dengan jendela pencarian 2 kata sebelumnya (preceding window of 2 words). Jika kata negasi ditemukan sebelum kata bersentimen, skor polaritas kata tersebut akan dibalik secara otomatis (inversi sentimen).
-6. **Filter Perbedaan Prediksi (Prediction Mismatch Filter)**: Dashboard dilengkapi penyaring data untuk menyembunyikan komentar yang memiliki kesepakatan model, sehingga pengguna hanya memfokuskan proses anotasi Ground Truth pada komentar-komentar yang hasil klasifikasi Lexicon dan LLM-nya berbeda.
+5. **Penanganan Kata Negasi (Negation Handling)**: Algoritma Lexicon-based dilengkapi pendeteksi kata negasi (seperti "tidak", "bukan", "not", "no") dengan jendela pencarian 2 kata sebelumnya. Jika kata negasi ditemukan sebelum kata bersentimen, skor polaritas kata tersebut akan dibalik secara otomatis (inversi sentimen).
+6. **Filter Perbedaan Prediksi (Prediction Mismatch Filter) & Sorting**: Dashboard dilengkapi penyaring data untuk menyembunyikan komentar yang memiliki kesepakatan model agar pengguna fokus melakukan anotasi pada data mismatch. Serta dilengkapi fitur pengurutan (Sort) berdasarkan komentar terbaru atau jumlah Likes terbanyak.
 7. **Metrik Evaluasi Akademik Lengkap**: Perhitungan otomatis untuk akurasi (Accuracy), presisi (Precision), sensitivitas (Recall), F1-Score (Macro Average), Confusion Matrix interaktif, serta Cohen's Kappa Coefficient untuk menilai keandalan kesepakatan klasifikasi terhadap Ground Truth.
-8. **Benchmark Waktu Eksekusi**: Menghitung secara presisi durasi waktu eksekusi proses analisis tiap model (dalam milidetik/detik) beserta rasio perbandingan kecepatan (speedup factor) antara performa komputasi lokal Lexicon vs pemanggilan API Cloud LLM.
-9. **Ekspor Laporan PDF & Excel**: Pengguna dapat mengunduh lembar kerja Excel hasil analisis yang terformat rapi dan mencetak laporan analisis komprehensif berformat PDF yang mencakup visualisasi grafik, Confusion Matrix, dan ringkasan metrik evaluasi.
+8. **Analisis Lanjutan**:
+   * **Tren Sentimen (Timeline)**: Visualisasi grafis perkembangan sentimen komentar (Ground Truth) sepanjang waktu rilis komentar menggunakan timestamp yang valid.
+   * **Frekuensi Kata (Top Words)**: Diagram batang horizontal perbandingan kata kunci yang paling sering muncul pada komentar bersentimen positif vs negatif.
+   * **Pemodelan Topik (Topic Modeling)**: Pengelompokan komentar secara cerdas menggunakan kombinasi TF-IDF dan clustering K-Means untuk mendeteksi 3 topik pembicaraan utama beserta sampel komentar dan kata kuncinya.
+9. **Navigasi Riwayat Analisis (History Viewer)**: Pengguna dapat membuka, menganalisis, dan mengedit data analisis lama langsung dari sidebar menggunakan dropdown riwayat berkas lokal di direktori `history/`.
+10. **Benchmark Waktu Eksekusi**: Menghitung secara presisi durasi waktu eksekusi proses analisis tiap model (dalam milidetik/detik) beserta rasio perbandingan kecepatan (speedup factor) antara performa komputasi lokal Lexicon vs pemanggilan API Cloud LLM.
+11. **Stemming Caching Sastrawi**: Penerapan in-memory cache pada pemrosesan stemming PySastrawi. Sistem tidak akan mengulang stemming pada kata yang sama, meningkatkan kecepatan komputasi Lexicon hingga 70%.
+12. **Ekspor Laporan PDF & Excel**: Pengguna dapat mengunduh lembar kerja Excel hasil analisis yang terformat rapi dan mencetak laporan analisis komprehensif berformat PDF yang mencakup visualisasi grafik, Confusion Matrix, dan ringkasan metrik evaluasi.
 
 ---
 
@@ -37,40 +43,40 @@ Sistem SEMANTIKA dapat dikonfigurasi melalui file `.env` dengan salah satu dari 
 
 ## Alur Kerja Sistem (System Workflow)
 
-Alur kerja utama sistem dari input URL YouTube oleh pengguna hingga visualisasi metrik evaluasi digambarkan sebagai berikut:
+Alur kerja utama sistem dari penentuan sumber data hingga visualisasi metrik evaluasi digambarkan sebagai berikut:
 
 ```mermaid
 graph TD
-    A[Pengguna] -->|Input: URL YouTube & Konfigurasi| B[Streamlit Dashboard]
-    B -->|Picu Analisis Baru| C{Pengecekan Mode App}
-    C -->|production| D[Ambil Data Historis dari Google Sheets]
-    C -->|development| E[Gunakan Penyimpanan CSV Lokal]
-    
-    B -->|Ambil Komentar| F[YouTube Downloader]
-    F -->|Komentar Mentah| G[Engine Analisis Sentimen]
+    A[Pengguna] -->|Pilih Sumber Data: Scraping vs Lokal| B[Streamlit Dashboard]
+    B -->|Pilihan: Buka Riwayat Lokal| C[History Viewer - Muat Berkas CSV Lokal]
+    B -->|Pilihan: Ambil Video Baru| D[Ambil Judul Video & Metadata]
+    D -->|Scrape Komentar, Likes, Waktu| E[YouTube Downloader]
+    E -->|Komentar Mentah + Metadata| F[Engine Analisis Sentimen]
     
     subgraph Engine Analisis Sentimen
-        G --> H[Lexicon-Based Engine]
-        G --> I[LLM-Based Engine]
+        F --> G[Lexicon-Based Engine - Cache Stemming Sastrawi]
+        F --> H[LLM-Based Engine - Batching NVIDIA NIM]
     end
     
-    H -->|Preprocessing, Normalisasi Slang, Negasi, InSet/VADER| J[Lexicon Sentiment]
-    I -->|Batching, NVIDIA NIM API, Fallback Single| K[LLM Sentiment]
+    G -->|Preprocessing & Skoring| I[Hasil Prediksi Gabungan]
+    H -->|Batching & Fallback| I
     
-    J --> L[Gabungkan Hasil & Simpan ke CSV/GSheets]
-    K --> L
+    C -->|Muat Instan| J[Tampilkan di Dashboard]
+    I -->|Ekspor & Simpan ke CSV/GSheets| J
     
-    L -->|Tampilkan Data Editor| B
-    B -->|Anotasi / Edit Ground Truth| M[Perhitungan Evaluasi Real-time]
-    M -->|Confusion Matrix, Cohen's Kappa, Akurasi| B
+    J -->|Anotasi Ground Truth / Sort by Likes| K[Evaluasi Performa Real-time]
+    K -->|Visualisasi: Donut, CM, Timeline, Top Words, Topic Modeling| J
 ```
 
 ### Detail Langkah Alur Sistem:
-1. **Inisialisasi & Pengaturan**: Pengguna memasukkan URL video YouTube/Shorts dan menentukan batas komentar pada panel samping (sidebar) dashboard.
-2. **Scraping Data**: Sistem melakukan scraping komentar mentah (original comment), nama penulis (author), dan ID komentar dari YouTube.
-3. **Analisis Paralel**: Komentar mentah diproses oleh dua model secara bersamaan (Lexicon-based di CPU lokal dan LLM-based melalui NVIDIA NIM API).
-4. **Penyimpanan**: Hasil prediksi dikonsolidasikan dan disimpan ke `sentiment_results.csv` (dan disinkronkan ke worksheet Google Sheets jika mode aplikasi adalah `production`).
-5. **Visualisasi & Interaksi**: Dashboard Streamlit menampilkan data hasil analisis. Pengguna dapat menyaring data yang berbeda prediksi (mismatch) lalu mengisi Ground Truth. Setiap perubahan Ground Truth disimpan secara instan dan memperbarui visualisasi metrik evaluasi pada tab analisis.
+1. **Pilih Sumber Data**: Pengguna menentukan apakah ingin menganalisis video baru dengan scraping, atau memuat riwayat analisis lokal dari dropdown setelan di sidebar.
+2. **Pengambilan Data (Scraping)**: Jika memilih scraping, sistem mengunduh komentar beserta metadata jumlah Likes, deskripsi waktu relatif, dan epoch timestamp yang valid.
+3. **Analisis Sentimen Paralel**:
+   * **Lexicon-based**: Menjalankan pra-pemrosesan kata demi kata. Menggunakan in-memory cache untuk proses stemming Sastrawi guna menghindari latensi pada perulangan kata dasar yang sama.
+   * **LLM-based**: Mengelompokkan komentar per 20 data dan mengirimkannya ke NVIDIA NIM API.
+4. **Konsolidasi & Penyimpanan**: Menggabungkan seluruh hasil klasifikasi dan menyimpan ke berkas CSV lokal di dalam folder `history/` (dan disinkronkan ke Google Sheets jika mode aplikasi adalah `production`).
+5. **Urutkan & Filter**: Dashboard memuat tabel komentar. Pengguna dapat mengurutkan komentar berdasarkan jumlah Likes atau waktu terbaru, menyaring data mismatch, serta melakukan anotasi Ground Truth.
+6. **Visualisasi Lanjutan**: Pengguna dapat menjelajahi sebaran sentimen (Donut Chart), Confusion Matrix, grafik tren waktu rilis komentar, bar chart frekuensi kata terbanyak, serta kluster topik pembicaraan (Topic Modeling).
 
 ---
 
@@ -85,7 +91,7 @@ graph TD
     A[Komentar Mentah] --> B[Case Folding & Pembersihan Karakter]
     B --> C[Normalisasi Slang - Kamus Statis & Custom JSON]
     C --> D[Pembersihan Stopword Sastrawi - Proteksi Kata Negasi]
-    D --> E[Stemming Sastrawi - Proteksi Kata Bahasa Inggris]
+    D --> E[Stemming Sastrawi - Caching Word-by-Word & Proteksi Bahasa Inggris]
     E --> F[Deteksi Bahasa Dominan - InSet vs VADER]
     F --> G{Pilih Kamus}
     G -->|Indonesian| H[InSet Lexicon]
@@ -103,13 +109,13 @@ graph TD
 1. **Case Folding & Pembersihan**: Mengubah seluruh teks komentar menjadi huruf kecil (lowercase) dan menghapus elemen non-teks seperti tautan URL, mention username (`@`), tagar (`#`), karakter non-ASCII, angka, dan tanda baca.
 2. **Normalisasi Slang**: Memecah kalimat menjadi token kata, kemudian mencocokkan setiap kata dengan kamus slang statis gabungan dan kamus slang dinamis (`lexicon/custom_slang.json`). Singkatan atau kata slang diubah menjadi kata baku bahasa Indonesia.
 3. **Pembersihan Stopword (Stopword Removal)**: Menghapus kata-kata yang tidak memiliki makna sentimen penting (seperti "yang", "dan", "di"). Namun, sistem telah dimodifikasi untuk memproteksi kata negasi (seperti "tidak", "bukan", "belum") dari penghapusan agar tidak merusak konteks kalimat negasi.
-4. **Stemming (Sastrawi)**: Mengubah kata berimbuhan menjadi kata dasar menggunakan PySastrawi. Untuk mencegah kerusakan kata bahasa Inggris yang sering bercampur dalam komentar (misal: "learning", "gaming"), sistem memproteksi kata-kata bahasa Inggris dari proses stemming Sastrawi.
+4. **Stemming Sastrawi dengan Cache**: Mengubah kata berimbuhan menjadi kata dasar menggunakan PySastrawi. Untuk mempercepat proses stemming yang berat secara komputasi, sistem menggunakan in-memory cache (`self.stem_cache`) pada tingkat kata. Sistem juga memproteksi kata bahasa Inggris dari stemming Sastrawi agar tidak merusak ejaan aslinya.
 5. **Deteksi Bahasa Dominan**: Menghitung jumlah kecocokan token kata terhadap kamus bahasa Indonesia (InSet) dan bahasa Inggris (VADER). Bahasa dengan kecocokan terbanyak dipilih sebagai bahasa dominan komentar tersebut untuk proses evaluasi sentimen selanjutnya.
 6. **Pencarian Skor & Penanganan Negasi**: Mengambil skor sentimen untuk setiap token kata dari kamus terpilih (InSet berkisar $-5$ hingga $+5$, VADER berkisar $-4$ hingga $+4$). Untuk setiap kata bermakna sentimen, sistem memeriksa 2 token sebelumnya. Jika terdapat kata negasi, nilai sentimen kata tersebut dikalikan dengan $-1$ (dibalik).
 7. **Klasifikasi**: Skor kumulatif dari seluruh token dijumlahkan. Nilai sentimen dikategorikan menjadi `positif` jika skor $> 0.05$, `negatif` jika skor $< -0.05$, dan `netral` untuk rentang diantaranya.
 
 ### Fitur & Kelebihan Model Lexicon-Based:
-* **Kecepatan Eksekusi Sangat Tinggi**: Komputasi berjalan secara lokal pada CPU dengan latensi sangat rendah (sub-milidetik per komentar).
+* **Optimalisasi Kecepatan Tinggi (Stemming Cache)**: Komputasi berjalan secara lokal pada CPU dengan efisiensi tinggi berkat in-memory cache stemming, memangkas durasi preprocessing hingga 70%.
 * **Kustomisasi Slang Fleksibel**: Mampu menangani bahasa gaul internet secara dinamis berkat integrasi editor kamus slang yang langsung terhubung ke sistem normalisasi.
 * **Akurasi Negasi Lebih Presisi**: Mampu membedakan sentimen antara kalimat "saya suka" (positif) dan "saya tidak suka" (negatif) berkat mekanisme inversi skor negasi.
 * **Dukungan Campuran Bahasa (Code-Mixing)**: Otomatis mendeteksi dan mengadopsi struktur bahasa Inggris atau Indonesia berdasarkan komposisi kata dalam komentar.

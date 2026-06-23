@@ -648,49 +648,108 @@ if menu_selection == "Analisis Video Tunggal":
     st.sidebar.title(":material/settings: Setelan SEMANTIKA")
     st.sidebar.markdown("---")
     
-    url_input = st.sidebar.text_input(
-        "URL Video YouTube / Shorts",
-        key="youtube_url_widget",
-        help="Masukkan URL video YouTube atau Shorts yang ingin dianalisis."
+    data_source = st.sidebar.radio(
+        "Sumber Data",
+        options=["Ambil Video Baru (Scraping)", "Buka Riwayat Analisis (Lokal)"],
+        help="Pilih apakah ingin melakukan penarikan data baru dari YouTube atau membuka riwayat yang sudah ada di folder history."
     )
     
-    limit_input = st.sidebar.slider(
-        "Jumlah Komentar Maksimal",
-        min_value=10,
-        max_value=100,
-        value=MAX_COMMENTS,
-        step=10,
-        help="Batasi jumlah komentar yang akan ditarik."
-    )
+    # Initialize placeholders to avoid reference errors
+    url_input = ""
+    limit_input = MAX_COMMENTS
+    model_input = st.session_state.llm_model
+    force_refresh = False
+    btn_analyze = False
     
-    options_list = [
-        "meta/llama-3.1-8b-instruct", 
-        "meta/llama-3.1-70b-instruct", 
-        "nvidia/llama-3.1-nemotron-70b-instruct",
-        "deepseek-ai/deepseek-r1",
-        "deepseek-ai/deepseek-r1-distill-qwen-32b",
-        "qwen/qwen-2.5-72b-instruct",
-        "google/gemma-2-27b-it",
-        "google/gemma-2-9b-it"
-    ]
-    default_index = 0
-    if st.session_state.llm_model in options_list:
-        default_index = options_list.index(st.session_state.llm_model)
-    
-    model_input = st.sidebar.selectbox(
-        "Model LLM NVIDIA",
-        options=options_list,
-        index=default_index,
-        help="Pilih model NVIDIA NIM yang ingin digunakan untuk klasifikasi."
-    )
-    
-    force_refresh = st.sidebar.checkbox(
-        "Paksa Ambil Baru (Force Refresh)",
-        value=False,
-        help="Centang ini untuk mengabaikan riwayat lokal dan mengambil data baru dari YouTube & NVIDIA API."
-    )
-    
-    btn_analyze = st.sidebar.button(":material/play_circle: Mulai Analisis Data", use_container_width=True)
+    if data_source == "Ambil Video Baru (Scraping)":
+        url_input = st.sidebar.text_input(
+            "URL Video YouTube / Shorts",
+            key="youtube_url_widget",
+            help="Masukkan URL video YouTube atau Shorts yang ingin dianalisis."
+        )
+        
+        limit_input = st.sidebar.slider(
+            "Jumlah Komentar Maksimal",
+            min_value=10,
+            max_value=100,
+            value=MAX_COMMENTS,
+            step=10,
+            help="Batasi jumlah komentar yang akan ditarik."
+        )
+        
+        options_list = [
+            "meta/llama-3.1-8b-instruct", 
+            "meta/llama-3.1-70b-instruct", 
+            "nvidia/llama-3.1-nemotron-70b-instruct",
+            "deepseek-ai/deepseek-r1",
+            "deepseek-ai/deepseek-r1-distill-qwen-32b",
+            "qwen/qwen-2.5-72b-instruct",
+            "google/gemma-2-27b-it",
+            "google/gemma-2-9b-it"
+        ]
+        default_index = 0
+        if st.session_state.llm_model in options_list:
+            default_index = options_list.index(st.session_state.llm_model)
+        
+        model_input = st.sidebar.selectbox(
+            "Model LLM NVIDIA",
+            options=options_list,
+            index=default_index,
+            help="Pilih model NVIDIA NIM yang ingin digunakan untuk klasifikasi."
+        )
+        
+        force_refresh = st.sidebar.checkbox(
+            "Paksa Ambil Baru (Force Refresh)",
+            value=False,
+            help="Centang ini untuk mengabaikan riwayat lokal dan mengambil data baru dari YouTube & NVIDIA API."
+        )
+        
+        btn_analyze = st.sidebar.button(":material/play_circle: Mulai Analisis Data", use_container_width=True)
+    else:
+        # Scan history files
+        history_files = sorted([f for f in os.listdir(HISTORY_DIR) if f.endswith(".csv")])
+        if not history_files:
+            st.sidebar.warning("Tidak ditemukan riwayat analisis lokal di folder history.")
+        else:
+            selected_file = st.sidebar.selectbox(
+                "Pilih Riwayat Analisis",
+                options=history_files,
+                help="Pilih file riwayat yang ingin ditampilkan."
+            )
+            btn_load_history = st.sidebar.button(":material/folder_open: Buka Riwayat", use_container_width=True)
+            if btn_load_history and selected_file:
+                history_path = os.path.join(HISTORY_DIR, selected_file)
+                try:
+                    df_loaded = pd.read_csv(history_path)
+                    df_loaded["Ground Truth"] = df_loaded["Ground Truth"].fillna("")
+                    
+                    # Extract video ID and Title from filename if format is "[id] Title.csv"
+                    match = re.match(r"^\[([a-zA-Z0-9_-]+)\]\s*(.*)\.csv$", selected_file)
+                    if match:
+                        video_id = match.group(1)
+                        video_title = match.group(2)
+                    else:
+                        video_id = "unknown"
+                        video_title = selected_file.replace(".csv", "")
+                        
+                    # Save as current output file
+                    df_loaded.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+                    
+                    st.session_state.df = df_loaded
+                    st.session_state.video_title = video_title
+                    st.session_state.video_url = f"https://www.youtube.com/watch?v={video_id}" if video_id != "unknown" else ""
+                    
+                    if "LLM Model" in df_loaded.columns:
+                        st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
+                    if "Language" in df_loaded.columns:
+                        st.session_state.detected_lang = str(df_loaded["Language"].iloc[0])
+                        
+                    st.session_state.lexicon_time = None
+                    st.session_state.llm_time = None
+                    st.sidebar.success("Riwayat berhasil dimuat!")
+                    st.rerun()
+                except Exception as e:
+                    st.sidebar.error(f"Gagal memuat riwayat: {e}")
     
     if btn_analyze:
         st.session_state.loaded_history_file = ""
@@ -771,7 +830,10 @@ if menu_selection == "Analisis Video Tunggal":
                                     "cleaned_comment": cleaned_text,
                                     "lexicon_sentiment": sentiment,
                                     "lexicon_score": score,
-                                    "language": comment_lang
+                                    "language": comment_lang,
+                                    "likes": c.get("likes", 0),
+                                    "time": c.get("time", ""),
+                                    "time_parsed": c.get("time_parsed", 0.0)
                                 })
                                 if (idx + 1) % 10 == 0 or (idx + 1) == len(comments):
                                     status.write(f"   - Selesai memproses Lexicon: {idx + 1}/{len(comments)} komentar...")
@@ -807,6 +869,9 @@ if menu_selection == "Analisis Video Tunggal":
                                     "Author": c["author"],
                                     "Original Comment": c["original_comment"],
                                     "Cleaned Comment": c["cleaned_comment"],
+                                    "Likes": c["likes"],
+                                    "Time Description": c["time"],
+                                    "Timestamp": c["time_parsed"],
                                     "Lexicon Sentiment": c["lexicon_sentiment"],
                                     "Lexicon Score": c["lexicon_score"],
                                     "LLM Sentiment": llm_sentiment_map.get(cid, "netral"),
@@ -1387,6 +1452,12 @@ if st.session_state.df is not None:
     with col_filter:
         show_mismatch = st.checkbox(":material/compare: Hanya tampilkan data Mismatch (Lexicon vs LLM berbeda)", value=False, key="filter_mismatch")
         st.markdown(f"Tingkat kesepakatan model (Lexicon & LLM sama): **{pct_agreement:.1f}%** ({agreed_comments}/{total_comments} komentar)")
+        sort_by = st.selectbox(
+            ":material/sort: Urutkan Komentar",
+            options=["Bawaan (YouTube)", "Likes Terbanyak", "Waktu Terbaru"],
+            key="comment_sort_select",
+            help="Urutkan komentar pada tabel."
+        )
     with col_actions:
         with st.expander(":material/construction: Fitur Pengisian Cepat (Quick Labeling)"):
             st.write(f"Komentar yang bisa diisi otomatis (sepakat & kosong): **{fillable_count}**")
@@ -1433,6 +1504,15 @@ if st.session_state.df is not None:
     tab_view, tab_edit = st.tabs([":material/visibility: Tampilan Tabel Berwarna", ":material/edit: Edit Ground Truth"])
     
     display_df = st.session_state.df.copy()
+    
+    # Terapkan pengurutan
+    if sort_by == "Likes Terbanyak" and "Likes" in display_df.columns:
+        display_df["Likes"] = pd.to_numeric(display_df["Likes"], errors='coerce').fillna(0).astype(int)
+        display_df = display_df.sort_values(by="Likes", ascending=False)
+    elif sort_by == "Waktu Terbaru" and "Timestamp" in display_df.columns:
+        display_df["Timestamp"] = pd.to_numeric(display_df["Timestamp"], errors='coerce').fillna(0)
+        display_df = display_df.sort_values(by="Timestamp", ascending=False)
+        
     if show_mismatch:
         display_df = display_df[display_df["Lexicon Sentiment"] != display_df["LLM Sentiment"]]
     
@@ -1459,11 +1539,13 @@ if st.session_state.df is not None:
                 "Author": st.column_config.TextColumn("Penulis", width="medium"),
                 "Original Comment": st.column_config.TextColumn("Komentar Asli", width="large"),
                 "Cleaned Comment": st.column_config.TextColumn("Komentar Bersih (Stemmed)", width="medium"),
+                "Likes": st.column_config.NumberColumn("Likes", width="small"),
+                "Time Description": st.column_config.TextColumn("Waktu", width="small"),
                 "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small"),
                 "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small"),
                 "Ground Truth": st.column_config.TextColumn("Ground Truth", width="small"),
             },
-            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "LLM Sentiment", "Ground Truth"],
+            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "Ground Truth"],
             use_container_width=True,
             hide_index=True
         )
@@ -1483,10 +1565,12 @@ if st.session_state.df is not None:
                 "Author": st.column_config.TextColumn("Penulis", width="medium", disabled=True),
                 "Original Comment": st.column_config.TextColumn("Komentar Asli", width="large", disabled=True),
                 "Cleaned Comment": st.column_config.TextColumn("Komentar Bersih (Stemmed)", width="medium", disabled=True),
+                "Likes": st.column_config.NumberColumn("Likes", width="small", disabled=True),
+                "Time Description": st.column_config.TextColumn("Waktu", width="small", disabled=True),
                 "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small", disabled=True),
                 "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small", disabled=True),
             },
-            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "LLM Sentiment", "Ground Truth"],
+            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "Ground Truth"],
             use_container_width=True,
             key="data_editor",
             num_rows="fixed"
@@ -1659,10 +1743,13 @@ if st.session_state.df is not None:
             st.info("Informasi waktu eksekusi benchmark hanya tersedia untuk video yang baru dianalisis pada sesi aktif saat ini.", icon=":material/info:")
         
         # Tab Layout for Visualizations
-        tab1, tab2, tab3 = st.tabs([
-            ":material/donut_large: Sebaran Sentimen (Donut Charts)", 
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            ":material/pie_chart: Sebaran Sentimen (Donut Charts)", 
             ":material/grid_on: Matrik Kebingungan (Confusion Matrices)",
-            ":material/bar_chart: Perbandingan Metrik (Bar Chart)"
+            ":material/bar_chart: Perbandingan Metrik (Bar Chart)",
+            ":material/timeline: Tren Sentimen (Timeline)",
+            ":material/short_text: Frekuensi Kata (Top Words)",
+            ":material/category: Pemodelan Topik (Topic Modeling)"
         ])
         
         # Tab 1: Donut Charts
@@ -1728,7 +1815,7 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig_donut)
             plt.close()
-
+ 
         # Tab 2: Confusion Matrices & Standard Metrics
         with tab2:
             st.markdown("### Confusion Matrices & Performa Klasifikasi")
@@ -1770,7 +1857,7 @@ if st.session_state.df is not None:
             plt.tight_layout()
             st.pyplot(fig_cm)
             plt.close()
-
+ 
         # Tab 3: Metrics Comparison Bar Chart
         with tab3:
             st.markdown("### Perbandingan Metrik Evaluasi (Lexicon vs LLM)")
@@ -1830,6 +1917,142 @@ if st.session_state.df is not None:
             - 0.81 - 1.00: Sangat Kuat
             </small>
             """, unsafe_allow_html=True)
+
+        # Tab 4: Tren Sentimen terhadap Waktu Rilis Komentar
+        with tab4:
+            st.markdown("### Tren Sentimen terhadap Waktu Rilis Komentar")
+            if "Timestamp" in df_eval_filtered.columns and df_eval_filtered["Timestamp"].notna().any():
+                try:
+                    df_time = df_eval_filtered.copy()
+                    df_time["Datetime"] = pd.to_datetime(df_time["Timestamp"], unit='s', errors='coerce')
+                    df_time = df_time.dropna(subset=["Datetime"])
+                    
+                    if len(df_time) > 0:
+                        df_time["Date"] = df_time["Datetime"].dt.date
+                        time_pivot = df_time.groupby(["Date", "Ground Truth"]).size().unstack(fill_value=0)
+                        
+                        for col in ["positif", "negatif", "netral"]:
+                            if col not in time_pivot.columns:
+                                time_pivot[col] = 0
+                                
+                        time_pivot = time_pivot.sort_index()
+                        
+                        fig_time, ax_t = plt.subplots(figsize=(12, 5))
+                        if "positif" in time_pivot.columns:
+                            ax_t.plot(time_pivot.index, time_pivot["positif"], marker='o', color='#2ecc71', label='Positif', linewidth=2.5)
+                        if "negatif" in time_pivot.columns:
+                            ax_t.plot(time_pivot.index, time_pivot["negatif"], marker='x', color='#e74c3c', label='Negatif', linewidth=2.5)
+                        if "netral" in time_pivot.columns:
+                            ax_t.plot(time_pivot.index, time_pivot["netral"], marker='s', color='#95a5a6', label='Netral', linewidth=2)
+                        
+                        ax_t.set_ylabel('Jumlah Komentar', weight="bold")
+                        ax_t.set_xlabel('Tanggal', weight="bold")
+                        ax_t.set_title('Tren Perkembangan Sentimen Komentar (Ground Truth) sepanjang Waktu', weight="bold", fontsize=12)
+                        ax_t.grid(True, linestyle='--', alpha=0.5)
+                        ax_t.legend()
+                        plt.xticks(rotation=45)
+                        plt.tight_layout()
+                        st.pyplot(fig_time)
+                        plt.close()
+                        
+                        st.markdown("#### Detail Jumlah Sentimen Harian")
+                        st.dataframe(time_pivot, use_container_width=True)
+                    else:
+                        st.info("Data timestamp tidak valid untuk dianalisis.")
+                except Exception as e:
+                    st.error(f"Gagal memproses tren waktu: {e}")
+            else:
+                st.info("Komentar pada video ini tidak memiliki data timestamp yang valid untuk visualisasi tren waktu.")
+
+        # Tab 5: Analisis Frekuensi Kata Terpopuler
+        with tab5:
+            st.markdown("### Analisis Frekuensi Kata Kunci Terpopuler")
+            
+            def get_top_words(df_subset, top_n=10):
+                word_counts = {}
+                for text in df_subset["Cleaned Comment"].dropna().astype(str):
+                    for word in text.split():
+                        if len(word) > 1:
+                            word_counts[word] = word_counts.get(word, 0) + 1
+                sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
+                return sorted_words[:top_n]
+                
+            df_pos = df_eval_filtered[df_eval_filtered["Ground Truth"] == "positif"]
+            df_neg = df_eval_filtered[df_eval_filtered["Ground Truth"] == "negatif"]
+            
+            top_pos = get_top_words(df_pos)
+            top_neg = get_top_words(df_neg)
+            
+            col_pos, col_neg = st.columns(2)
+            with col_pos:
+                st.markdown("#### Kata Kunci pada Komentar Positif")
+                if top_pos:
+                    words, counts = zip(*top_pos)
+                    fig_p, ax_p = plt.subplots(figsize=(6, 4))
+                    ax_p.barh(words[::-1], counts[::-1], color='#2ecc71')
+                    ax_p.set_title("Top Kata Komentar Positif", weight="bold")
+                    ax_p.set_xlabel("Frekuensi")
+                    plt.tight_layout()
+                    st.pyplot(fig_p)
+                    plt.close()
+                    st.dataframe(pd.DataFrame(top_pos, columns=["Kata", "Frekuensi"]), use_container_width=True)
+                else:
+                    st.info("Belum ada data kata kunci positif yang cukup.")
+                    
+            with col_neg:
+                st.markdown("#### Kata Kunci pada Komentar Negatif")
+                if top_neg:
+                    words, counts = zip(*top_neg)
+                    fig_n, ax_n = plt.subplots(figsize=(6, 4))
+                    ax_n.barh(words[::-1], counts[::-1], color='#e74c3c')
+                    ax_n.set_title("Top Kata Komentar Negatif", weight="bold")
+                    ax_n.set_xlabel("Frekuensi")
+                    plt.tight_layout()
+                    st.pyplot(fig_n)
+                    plt.close()
+                    st.dataframe(pd.DataFrame(top_neg, columns=["Kata", "Frekuensi"]), use_container_width=True)
+                else:
+                    st.info("Belum ada data kata kunci negatif yang cukup.")
+
+        # Tab 6: Pemodelan Topik (TF-IDF + KMeans)
+        with tab6:
+            st.markdown("### Pemodelan Topik (Topic Modeling)")
+            st.write("Mengelompokkan komentar secara otomatis menggunakan kombinasi algoritma **TF-IDF Vectorizer** dan **K-Means Clustering**.")
+            
+            clean_comments = df_eval_filtered["Cleaned Comment"].dropna().astype(str).tolist()
+            original_comments = df_eval_filtered["Original Comment"].dropna().astype(str).tolist()
+            
+            if len(clean_comments) >= 5:
+                try:
+                    from sklearn.feature_extraction.text import TfidfVectorizer
+                    from sklearn.cluster import KMeans
+                    
+                    vectorizer = TfidfVectorizer(max_features=500, min_df=1, stop_words=None)
+                    X = vectorizer.fit_transform(clean_comments)
+                    
+                    n_clusters = min(3, len(clean_comments))
+                    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
+                    kmeans.fit(X)
+                    
+                    order_centroids = kmeans.cluster_centers_.argsort()[:, ::-1]
+                    terms = vectorizer.get_feature_names_out()
+                    
+                    st.markdown(f"Berhasil mendeteksi **{n_clusters}** kelompok topik utama pembicaraan:")
+                    
+                    for cluster_idx in range(n_clusters):
+                        top_words = [terms[ind] for ind in order_centroids[cluster_idx, :5]]
+                        topic_keywords = ", ".join(top_words)
+                        cluster_comments = [original_comments[j] for j, label in enumerate(kmeans.labels_) if label == cluster_idx]
+                        sample_comments = cluster_comments[:3]
+                        
+                        st.markdown(f"**Topik {cluster_idx + 1}:** `{topic_keywords}` ({len(cluster_comments)} komentar)")
+                        for sc in sample_comments:
+                            st.caption(f"- \"{sc[:120]}...\"")
+                        st.markdown(" ")
+                except Exception as e:
+                    st.error(f"Gagal melakukan clustering topik: {e}")
+            else:
+                st.info("Dibutuhkan minimal 5 komentar Ground Truth untuk mendeteksi kelompok topik secara akurat.")
 
 elif menu_selection == "Kelola Kamus Slang":
     st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Kelola Kamus Slang</h1>", unsafe_allow_html=True)

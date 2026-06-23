@@ -79,12 +79,26 @@ def fetch_youtube_comments(url: str, limit: int = 100) -> list:
             if count >= limit:
                 break
                 
+            # Clean and parse likes (votes) to integer
+            likes_str = str(comment.get("votes", "0")).strip()
+            try:
+                if 'K' in likes_str.upper():
+                    likes = int(float(likes_str.upper().replace('K', '').replace(',', '.')) * 1000)
+                elif 'M' in likes_str.upper():
+                    likes = int(float(likes_str.upper().replace('M', '').replace(',', '.')) * 1000000)
+                else:
+                    likes_clean = re.sub(r"[^\d]", "", likes_str)
+                    likes = int(likes_clean) if likes_clean else 0
+            except Exception:
+                likes = 0
+
             comments_list.append({
                 "comment_id": comment.get("cid"),
                 "author": comment.get("author"),
                 "text": comment.get("text"),
-                "likes": comment.get("votes"),
-                "time": comment.get("time")
+                "likes": likes,
+                "time": comment.get("time"),
+                "time_parsed": comment.get("time_parsed")
             })
             count += 1
             if count % 20 == 0:

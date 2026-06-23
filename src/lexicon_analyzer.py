@@ -22,6 +22,7 @@ class LexiconSentimentAnalyzer:
         self.en_lexicon = {}
         self.stemmer = None
         self.stopword_remover = None
+        self.stem_cache = {}
         
         # Negation lists for dynamic sentiment inversion
         self.negation_words_id = {"tidak", "g", "ga", "gak", "kaga", "kagak", "tdk", "bukan", "kurang", "belum", "blm"}
@@ -118,6 +119,17 @@ class LexiconSentimentAnalyzer:
         self.stopword_remover = StopWordRemover(dictionary)
         logger.info("Sastrawi berhasil diinisialisasi.")
 
+    def stem_word(self, word: str) -> str:
+        """
+        Stems a single word with in-memory caching to optimize Sastrawi performance.
+        """
+        if word in self.stem_cache:
+            return self.stem_cache[word]
+        
+        stemmed = self.stemmer.stem(word)
+        self.stem_cache[word] = stemmed
+        return stemmed
+
     def preprocess_text(self, text: str) -> str:
         """
         Cleans and preprocesses Indonesian text.
@@ -143,21 +155,15 @@ class LexiconSentimentAnalyzer:
         # Stopword removal
         text = self.stopword_remover.remove(text)
         
-        # Stemming
-        # To protect English words from Sastrawi distortion, we stem word-by-word 
-        # and skip words that are present in the English VADER lexicon.
+        # Stemming with cache and English word protection
         words = text.split()
-        has_english = any(word in self.en_lexicon for word in words)
-        if has_english:
-            stemmed_words = []
-            for word in words:
-                if word in self.en_lexicon:
-                    stemmed_words.append(word)
-                else:
-                    stemmed_words.append(self.stemmer.stem(word))
-            text = " ".join(stemmed_words)
-        else:
-            text = self.stemmer.stem(text)
+        stemmed_words = []
+        for word in words:
+            if word in self.en_lexicon:
+                stemmed_words.append(word)
+            else:
+                stemmed_words.append(self.stem_word(word))
+        text = " ".join(stemmed_words)
         
         return text
 
