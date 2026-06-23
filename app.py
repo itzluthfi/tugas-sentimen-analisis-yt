@@ -241,6 +241,9 @@ def convert_df_to_excel(df, video_title, video_url):
         netral_fill = PatternFill(start_color='E2E3E5', end_color='E2E3E5', fill_type='solid')  # Light Gray
         netral_font = Font(name='Arial', size=10, color='383D41', bold=False)
         
+        mismatch_fill = PatternFill(start_color='FFE699', end_color='FFE699', fill_type='solid') # Warning Yellow
+        mismatch_font = Font(name='Arial', size=10, color='7F6000', bold=True)
+        
         thin_border = Border(
             left=Side(style='thin', color='D3D3D3'),
             right=Side(style='thin', color='D3D3D3'),
@@ -279,15 +282,36 @@ def convert_df_to_excel(df, video_title, video_url):
                 # Apply conditional formatting for sentiment columns
                 if col_name in ["Sentimen Lexicon", "Sentimen LLM", "Ground Truth"]:
                     val_lower = str(cell.value or "").strip().lower()
-                    if val_lower == "positif":
-                        cell.fill = positif_fill
-                        cell.font = positif_font
-                    elif val_lower == "negatif":
-                        cell.fill = negatif_fill
-                        cell.font = negatif_font
-                    elif val_lower == "netral":
-                        cell.fill = netral_fill
-                        cell.font = netral_font
+                    if col_name == "Ground Truth":
+                        # Check mismatch between Sentimen Lexicon and Sentimen LLM in this row
+                        # Row index in df_export is row_idx - 8
+                        df_row_idx = row_idx - 8
+                        lex_val = str(df_export.iloc[df_row_idx].get("Sentimen Lexicon", "")).strip().lower()
+                        llm_val = str(df_export.iloc[df_row_idx].get("Sentimen LLM", "")).strip().lower()
+                        
+                        if lex_val != llm_val:
+                            cell.fill = mismatch_fill
+                            cell.font = mismatch_font
+                        else:
+                            if val_lower == "positif":
+                                cell.fill = positif_fill
+                                cell.font = positif_font
+                            elif val_lower == "negatif":
+                                cell.fill = negatif_fill
+                                cell.font = negatif_font
+                            elif val_lower == "netral":
+                                cell.fill = netral_fill
+                                cell.font = netral_font
+                    else:
+                        if val_lower == "positif":
+                            cell.fill = positif_fill
+                            cell.font = positif_font
+                        elif val_lower == "negatif":
+                            cell.fill = negatif_fill
+                            cell.font = negatif_font
+                        elif val_lower == "netral":
+                            cell.fill = netral_fill
+                            cell.font = netral_font
                 
                 # Estimate necessary row height dynamically by analyzing wrapped lines
                 val = str(cell.value or "")
@@ -469,12 +493,15 @@ def convert_df_to_pdf(df, video_title, video_url):
             
         # Ground Truth (Column index 6)
         gt_val = str(row.get("Ground Truth", "")).strip().lower()
-        if gt_val == "positif":
-            t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#C6EFCE')))
-        elif gt_val == "negatif":
-            t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#FFC7CE')))
-        elif gt_val == "netral":
-            t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#E2E3E5')))
+        if lex_val != llm_val:
+            t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#FFE699')))
+        else:
+            if gt_val == "positif":
+                t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#C6EFCE')))
+            elif gt_val == "negatif":
+                t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#FFC7CE')))
+            elif gt_val == "netral":
+                t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#E2E3E5')))
         
     t.setStyle(TableStyle(t_style))
     story.append(t)
@@ -671,10 +698,10 @@ if menu_selection == "Analisis Video Tunggal":
         limit_input = st.sidebar.slider(
             "Jumlah Komentar Maksimal",
             min_value=10,
-            max_value=100,
-            value=MAX_COMMENTS,
+            max_value=1000,
+            value=100,
             step=10,
-            help="Batasi jumlah komentar yang akan ditarik."
+            help="Batasi jumlah komentar yang akan ditarik. Default adalah 100 komentar."
         )
         
         options_list = [
@@ -863,6 +890,8 @@ if menu_selection == "Analisis Video Tunggal":
                             for idx, c in enumerate(processed_comments):
                                 cid = c["comment_id"]
                                 gt = existing_gts.get(cid, "")
+                                if not gt or str(gt).strip() == "":
+                                    gt = llm_sentiment_map.get(cid, "netral")
                                 final_data.append({
                                     "No": idx + 1,
                                     "Comment ID": cid,
@@ -1445,7 +1474,7 @@ if st.session_state.df is not None:
     pct_agreement = (agreed_comments / total_comments * 100) if total_comments > 0 else 0
     
     empty_gt_mask = df_temp["Ground Truth"].isna() | (df_temp["Ground Truth"].astype(str).str.strip() == "")
-    fillable_count = (agree_mask & empty_gt_mask).sum()
+    fillable_count = empty_gt_mask.sum()
 
     # Layout penyaring dan aksi cepat
     col_filter, col_actions = st.columns([3, 2])
@@ -1460,13 +1489,13 @@ if st.session_state.df is not None:
         )
     with col_actions:
         with st.expander(":material/construction: Fitur Pengisian Cepat (Quick Labeling)"):
-            st.write(f"Komentar yang bisa diisi otomatis (sepakat & kosong): **{fillable_count}**")
+            st.write(f"Komentar yang bisa diisi otomatis (kosong): **{fillable_count}**")
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("Isi Otomatis", use_container_width=True, help="Mengisi Ground Truth kosong dengan hasil prediksi jika prediksi Lexicon dan LLM sama"):
+                if st.button("Isi Otomatis", use_container_width=True, help="Mengisi Ground Truth kosong dengan hasil prediksi LLM"):
                     if fillable_count > 0:
-                        mask_to_fill = agree_mask & empty_gt_mask
-                        st.session_state.df.loc[mask_to_fill, "Ground Truth"] = st.session_state.df.loc[mask_to_fill, "Lexicon Sentiment"]
+                        mask_to_fill = empty_gt_mask
+                        st.session_state.df.loc[mask_to_fill, "Ground Truth"] = st.session_state.df.loc[mask_to_fill, "LLM Sentiment"]
                         st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
                         
                         # Sync dengan riwayat lokal & GSheets
@@ -1482,7 +1511,7 @@ if st.session_state.df is not None:
                         st.success(f"Berhasil mengisi {fillable_count} komentar!")
                         st.rerun()
                     else:
-                        st.info("Tidak ada data kosong yang memiliki kesepakatan model.")
+                        st.info("Tidak ada data Ground Truth yang kosong.")
             with btn_col2:
                 if st.button("Kosongkan GT", use_container_width=True, help="Menghapus semua label Ground Truth untuk memulai dari awal"):
                     st.session_state.df["Ground Truth"] = ""
@@ -1517,20 +1546,36 @@ if st.session_state.df is not None:
         display_df = display_df[display_df["Lexicon Sentiment"] != display_df["LLM Sentiment"]]
     
     with tab_view:
-        def style_sentiment(val):
-            val_lower = str(val).strip().lower()
-            if val_lower == "positif":
-                return "background-color: #C6EFCE; color: #006100; font-weight: bold;"
-            elif val_lower == "negatif":
-                return "background-color: #FFC7CE; color: #9C0006; font-weight: bold;"
-            elif val_lower == "netral":
-                return "background-color: #E2E3E5; color: #383D41;"
-            return ""
+        def style_table_row(row):
+            styles = pd.Series("", index=row.index)
             
-        if hasattr(display_df.style, "map"):
-            styled_df = display_df.style.map(style_sentiment, subset=["Lexicon Sentiment", "LLM Sentiment", "Ground Truth"])
-        else:
-            styled_df = display_df.style.applymap(style_sentiment, subset=["Lexicon Sentiment", "LLM Sentiment", "Ground Truth"])
+            def get_color(val):
+                val_lower = str(val).strip().lower()
+                if val_lower == "positif":
+                    return "background-color: #C6EFCE; color: #006100; font-weight: bold;"
+                elif val_lower == "negatif":
+                    return "background-color: #FFC7CE; color: #9C0006; font-weight: bold;"
+                elif val_lower == "netral":
+                    return "background-color: #E2E3E5; color: #383D41;"
+                return ""
+            
+            lex = row.get("Lexicon Sentiment")
+            llm = row.get("LLM Sentiment")
+            gt = row.get("Ground Truth")
+            
+            if "Lexicon Sentiment" in row.index:
+                styles["Lexicon Sentiment"] = get_color(lex)
+            if "LLM Sentiment" in row.index:
+                styles["LLM Sentiment"] = get_color(llm)
+            if "Ground Truth" in row.index:
+                if str(lex).strip().lower() != str(llm).strip().lower():
+                    styles["Ground Truth"] = "background-color: #FFE699; color: #7F6000; font-weight: bold;"
+                else:
+                    styles["Ground Truth"] = get_color(gt)
+                    
+            return styles
+            
+        styled_df = display_df.style.apply(style_table_row, axis=1)
             
         st.dataframe(
             styled_df,
