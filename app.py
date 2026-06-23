@@ -1980,9 +1980,9 @@ if st.session_state.df is not None:
         # Tab 4: Tren Sentimen terhadap Waktu Rilis Komentar
         with tab4:
             st.markdown("### Tren Sentimen terhadap Waktu Rilis Komentar")
-            if "Timestamp" in df_eval_filtered.columns and df_eval_filtered["Timestamp"].notna().any():
+            if "Timestamp" in df_eval.columns and df_eval["Timestamp"].notna().any():
                 try:
-                    df_time = df_eval_filtered.copy()
+                    df_time = df_eval.copy()
                     df_time["Datetime"] = pd.to_datetime(df_time["Timestamp"], unit='s', errors='coerce')
                     df_time = df_time.dropna(subset=["Datetime"])
                     
@@ -2036,8 +2036,8 @@ if st.session_state.df is not None:
                 sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
                 return sorted_words[:top_n]
                 
-            df_pos = df_eval_filtered[df_eval_filtered["Ground Truth"] == "positif"]
-            df_neg = df_eval_filtered[df_eval_filtered["Ground Truth"] == "negatif"]
+            df_pos = df_eval[df_eval["Ground Truth"] == "positif"]
+            df_neg = df_eval[df_eval["Ground Truth"] == "negatif"]
             
             top_pos = get_top_words(df_pos)
             top_neg = get_top_words(df_neg)
@@ -2078,8 +2078,8 @@ if st.session_state.df is not None:
             st.markdown("### Pemodelan Topik (Topic Modeling)")
             st.write("Mengelompokkan komentar secara otomatis menggunakan kombinasi algoritma **TF-IDF Vectorizer** dan **K-Means Clustering**.")
             
-            clean_comments = df_eval_filtered["Cleaned Comment"].dropna().astype(str).tolist()
-            original_comments = df_eval_filtered["Original Comment"].dropna().astype(str).tolist()
+            clean_comments = df_eval["Cleaned Comment"].dropna().astype(str).tolist()
+            original_comments = df_eval["Original Comment"].dropna().astype(str).tolist()
             
             if len(clean_comments) >= 5:
                 try:
