@@ -66,15 +66,16 @@ class LLMSentimentAnalyzer:
         system_prompt = (
             "Anda adalah asisten AI yang ahli dalam analisis sentimen teks Bahasa Indonesia, "
             "termasuk bahasa daerah (seperti Jawa, Sunda) dan singkatan/slang gaul internet.\n"
-            "Tugas Anda adalah menentukan sentimen dari daftar komentar YouTube yang diberikan.\n\n"
+            "Tugas Anda adalah menentukan sentimen beserta alasannya dari daftar komentar YouTube yang diberikan.\n\n"
             "Kategori sentimen wajib berupa salah satu dari: 'positif', 'negatif', atau 'netral'.\n"
             "Aturan Sentimen:\n"
             "- 'positif': Komentar berisi pujian, apresiasi, rasa senang, dukungan, kelucuan positif, atau rekomendasi bagus.\n"
             "- 'negatif': Komentar berisi kritik, keluhan, cacian, kekecewaan, ketidakpuasan, atau hujatan.\n"
             "- 'netral': Komentar berupa pertanyaan biasa, pernyataan umum, tidak menunjukkan emosi kuat, atau di luar konteks video.\n\n"
+            "Alasan (reason) harus berupa penjelasan singkat (1 kalimat pendek) dalam Bahasa Indonesia mengapa komentar tersebut dikategorikan ke dalam sentimen tersebut.\n\n"
             "Format Output harus berupa JSON ARRAY murni yang berisi objek dengan format:\n"
             "[\n"
-            "  {\"comment_id\": \"ID_KOMENTAR\", \"sentiment\": \"positif/negatif/netral\"},\n"
+            "  {\"comment_id\": \"ID_KOMENTAR\", \"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"},\n"
             "  ...\n"
             "]\n"
             "Jangan menambahkan teks penjelasan, pengantar, atau penutup apapun di luar JSON array tersebut."
@@ -112,21 +113,25 @@ class LLMSentimentAnalyzer:
             for item in results:
                 cid = item.get("comment_id")
                 sent = item.get("sentiment", "netral").lower().strip()
+                reason = item.get("reason", "").strip()
                 if sent not in ["positif", "negatif", "netral"]:
                     sent = "netral"
-                sentiment_map[cid] = sent
+                sentiment_map[cid] = (sent, reason)
                 
             # Verify we got a result for each comment, otherwise fill default
             output_results = []
             for c in comments:
                 cid = c["comment_id"]
-                sentiment = sentiment_map.get(cid)
-                if not sentiment:
+                res = sentiment_map.get(cid)
+                if not res:
                     logger.warning(f"Komentar ID {cid} tidak ditemukan dalam output LLM. Menganalisis secara individu.")
-                    sentiment = self.analyze_single(c["text"])
+                    sentiment, reason = self.analyze_single(c["text"])
+                else:
+                    sentiment, reason = res
                 output_results.append({
                     "comment_id": cid,
-                    "llm_sentiment": sentiment
+                    "llm_sentiment": sentiment,
+                    "llm_reason": reason
                 })
                 
             return output_results
@@ -136,14 +141,15 @@ class LLMSentimentAnalyzer:
             logger.info("Menjalankan fallback ke analisis satu per satu untuk batch ini.")
             return self._fallback_single(comments)
 
-    def analyze_single(self, text: str) -> str:
+    def analyze_single(self, text: str) -> tuple[str, str]:
         """
         Analyzes a single comment. Useful for fallback.
+        Returns: (sentiment, reason)
         """
         system_prompt = (
             "Anda adalah ahli analisis sentimen teks Bahasa Indonesia.\n"
-            "Tentukan sentimen komentar YouTube ini menjadi: 'positif', 'negatif', atau 'netral'.\n"
-            "Output Anda harus HANYA kata kategorinya saja ('positif', 'negatif', atau 'netral') tanpa penjelasan."
+            "Tentukan sentimen komentar YouTube ini menjadi: 'positif', 'negatif', atau 'netral' beserta alasan singkatnya (1 kalimat).\n"
+            "Format Output harus berupa JSON murni dengan format: {\"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"}"
         )
         
         messages = [
@@ -154,14 +160,28 @@ class LLMSentimentAnalyzer:
         response = self._call_nvidia_api(messages)
         import re
         clean_response = re.sub(r'<thought>.*?</thought>', '', response, flags=re.DOTALL).strip()
-        sentiment = clean_response.lower().strip()
+        if clean_response.startswith("```json"):
+            clean_response = clean_response[7:]
+        if clean_response.endswith("```"):
+            clean_response = clean_response[:-3]
+        clean_response = clean_response.strip()
         
-        if sentiment in ["positif", "negatif", "netral"]:
-            return sentiment
-        # Regex search in case of extra words
-        if "positif" in sentiment: return "positif"
-        if "negatif" in sentiment: return "negatif"
-        return "netral"
+        try:
+            res_json = json.loads(clean_response)
+            sentiment = res_json.get("sentiment", "netral").lower().strip()
+            reason = res_json.get("reason", "").strip()
+        except Exception:
+            sentiment = "netral"
+            reason = "Gagal memproses alasan dari model."
+            if "positif" in clean_response.lower():
+                sentiment = "positif"
+            elif "negatif" in clean_response.lower():
+                sentiment = "negatif"
+                
+        if sentiment not in ["positif", "negatif", "netral"]:
+            sentiment = "netral"
+            
+        return sentiment, reason
 
     def _fallback_single(self, comments: list[dict]) -> list[dict]:
         """
@@ -169,10 +189,11 @@ class LLMSentimentAnalyzer:
         """
         results = []
         for c in comments:
-            sentiment = self.analyze_single(c["text"])
+            sentiment, reason = self.analyze_single(c["text"])
             results.append({
                 "comment_id": c["comment_id"],
-                "llm_sentiment": sentiment
+                "llm_sentiment": sentiment,
+                "llm_reason": reason
             })
         return results
 

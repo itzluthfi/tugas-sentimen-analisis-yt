@@ -153,6 +153,8 @@ if st.session_state.df is None and os.path.exists(OUTPUT_FILE):
         required_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "Ground Truth"]
         if all(col in df_loaded.columns for col in required_cols):
             df_loaded["Ground Truth"] = df_loaded["Ground Truth"].fillna("")
+            if "LLM Reason" not in df_loaded.columns:
+                df_loaded["LLM Reason"] = ""
             if "LLM Model" in df_loaded.columns:
                 st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
             else:
@@ -183,11 +185,12 @@ def convert_df_to_excel(df, video_title, video_url):
         "Cleaned Comment": "Komentar Bersih (Stemmed)",
         "Lexicon Sentiment": "Sentimen Lexicon",
         "LLM Sentiment": "Sentimen LLM",
+        "LLM Reason": "Alasan LLM",
         "Ground Truth": "Ground Truth"
     })
     
     # Keep only target columns in the exported spreadsheet
-    cols_to_keep = ["No", "Penulis", "Komentar Asli", "Komentar Bersih (Stemmed)", "Sentimen Lexicon", "Sentimen LLM", "Ground Truth"]
+    cols_to_keep = ["No", "Penulis", "Komentar Asli", "Komentar Bersih (Stemmed)", "Sentimen Lexicon", "Sentimen LLM", "Alasan LLM", "Ground Truth"]
     df_export = df_export[[col for col in cols_to_keep if col in df_export.columns]]
     
     # Column Widths mapping (defined early for row height estimates)
@@ -198,6 +201,7 @@ def convert_df_to_excel(df, video_title, video_url):
         "Komentar Bersih (Stemmed)": 40,
         "Sentimen Lexicon": 18,
         "Sentimen LLM": 18,
+        "Alasan LLM": 40,
         "Ground Truth": 18
     }
     
@@ -428,6 +432,7 @@ def convert_df_to_pdf(df, video_title, video_url):
         Paragraph("<b>Komentar Bersih (Stemmed)</b>", th_style),
         Paragraph("<b>Sentimen Lexicon</b>", th_style),
         Paragraph("<b>Sentimen LLM</b>", th_style),
+        Paragraph("<b>Alasan LLM</b>", th_style),
         Paragraph("<b>Ground Truth</b>", th_style)
     ]
     
@@ -441,14 +446,15 @@ def convert_df_to_pdf(df, video_title, video_url):
         clean_p = Paragraph(str(row.get("Cleaned Comment", "")), td_left_style)
         lex_p = Paragraph(str(row.get("Lexicon Sentiment", "")).capitalize(), td_center_style)
         llm_p = Paragraph(str(row.get("LLM Sentiment", "")).capitalize(), td_center_style)
+        reason_p = Paragraph(str(row.get("LLM Reason", "")), td_left_style)
         
         gt_val = str(row.get("Ground Truth", ""))
         gt_p = Paragraph(gt_val.capitalize() if gt_val else "-", td_center_style)
         
-        table_data.append([no_p, author_p, orig_p, clean_p, lex_p, llm_p, gt_p])
+        table_data.append([no_p, author_p, orig_p, clean_p, lex_p, llm_p, reason_p, gt_p])
         
     # Printable landscape A4 width is 781.89 points. Sum of columns: 780 pt.
-    col_widths = [30, 95, 245, 210, 65, 65, 70]
+    col_widths = [25, 75, 180, 120, 60, 60, 190, 70]
     
     # Create Table object
     t = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -491,17 +497,17 @@ def convert_df_to_pdf(df, video_title, video_url):
         elif llm_val == "netral":
             t_style.append(('BACKGROUND', (5, r), (5, r), colors.HexColor('#E2E3E5')))
             
-        # Ground Truth (Column index 6)
+        # Ground Truth (Column index 7)
         gt_val = str(row.get("Ground Truth", "")).strip().lower()
         if lex_val != llm_val:
-            t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#FFE699')))
+            t_style.append(('BACKGROUND', (7, r), (7, r), colors.HexColor('#FFE699')))
         else:
             if gt_val == "positif":
-                t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#C6EFCE')))
+                t_style.append(('BACKGROUND', (7, r), (7, r), colors.HexColor('#C6EFCE')))
             elif gt_val == "negatif":
-                t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#FFC7CE')))
+                t_style.append(('BACKGROUND', (7, r), (7, r), colors.HexColor('#FFC7CE')))
             elif gt_val == "netral":
-                t_style.append(('BACKGROUND', (6, r), (6, r), colors.HexColor('#E2E3E5')))
+                t_style.append(('BACKGROUND', (7, r), (7, r), colors.HexColor('#E2E3E5')))
         
     t.setStyle(TableStyle(t_style))
     story.append(t)
@@ -523,7 +529,7 @@ def load_all_gsheets_data():
     """
     Mengambil seluruh data riwayat sentimen dari worksheet Google Sheets 'Database_Sentimen'.
     """
-    cols = ["Video ID", "Video Title", "Video URL", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Model", "Language", "Ground Truth"]
+    cols = ["Video ID", "Video Title", "Video URL", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Reason", "LLM Model", "Language", "Ground Truth"]
     if APP_MODE != "production" or conn is None:
         return pd.DataFrame(columns=cols)
         
@@ -579,6 +585,7 @@ def sync_video_to_gsheets(video_id, video_title, video_url, df_video):
             "Lexicon Sentiment": row["Lexicon Sentiment"] if "Lexicon Sentiment" in row else row.get("lexicon_sentiment", ""),
             "Lexicon Score": row["Lexicon Score"] if "Lexicon Score" in row else row.get("lexicon_score", ""),
             "LLM Sentiment": row["LLM Sentiment"] if "LLM Sentiment" in row else row.get("llm_sentiment", ""),
+            "LLM Reason": row["LLM Reason"] if "LLM Reason" in row else row.get("llm_reason", ""),
             "LLM Model": row["LLM Model"] if "LLM Model" in row else st.session_state.llm_model,
             "Language": row["Language"] if "Language" in row else st.session_state.detected_lang,
             "Ground Truth": row.get("Ground Truth", "")
@@ -757,6 +764,8 @@ if menu_selection == "Analisis Video Tunggal":
                 try:
                     df_loaded = pd.read_csv(history_path)
                     df_loaded["Ground Truth"] = df_loaded["Ground Truth"].fillna("")
+                    if "LLM Reason" not in df_loaded.columns:
+                        df_loaded["LLM Reason"] = ""
                     
                     # Extract video ID and Title from filename if format is "[id] Title.csv"
                     match = re.match(r"^\[([a-zA-Z0-9_-]+)\]\s*(.*)\.csv$", selected_file)
@@ -805,6 +814,8 @@ if menu_selection == "Analisis Video Tunggal":
                     try:
                         df_loaded = pd.read_csv(history_path)
                         df_loaded["Ground Truth"] = df_loaded["Ground Truth"].fillna("")
+                        if "LLM Reason" not in df_loaded.columns:
+                            df_loaded["LLM Reason"] = ""
                         if "LLM Model" in df_loaded.columns:
                             st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
                         else:
@@ -880,6 +891,7 @@ if menu_selection == "Analisis Video Tunggal":
                             llm_analyzer = LLMSentimentAnalyzer(model=model_input)
                             batch_size = 20
                             llm_sentiment_map = {}
+                            llm_reason_map = {}
                             num_batches = (len(comments) - 1) // batch_size + 1
                             
                             for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
@@ -888,6 +900,7 @@ if menu_selection == "Analisis Video Tunggal":
                                 batch_results = llm_analyzer.analyze_batch(batch)
                                 for r in batch_results:
                                     llm_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
+                                    llm_reason_map[r["comment_id"]] = r.get("llm_reason", "")
                             st.session_state.llm_time = time.time() - start_llm_time
                             
                             # 5. Combine results and map existing ground truths
@@ -912,6 +925,7 @@ if menu_selection == "Analisis Video Tunggal":
                                     "Lexicon Sentiment": c["lexicon_sentiment"],
                                     "Lexicon Score": c["lexicon_score"],
                                     "LLM Sentiment": llm_sentiment_map.get(cid, "netral"),
+                                    "LLM Reason": llm_reason_map.get(cid, ""),
                                     "LLM Model": model_input,
                                     "Language": c["language"],
                                     "Ground Truth": gt
@@ -959,6 +973,8 @@ if menu_selection == "Analisis Video Tunggal":
             try:
                 df_loaded = pd.read_csv(history_path)
                 df_loaded["Ground Truth"] = df_loaded["Ground Truth"].fillna("")
+                if "LLM Reason" not in df_loaded.columns:
+                    df_loaded["LLM Reason"] = ""
                 if "LLM Model" in df_loaded.columns:
                     st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
                 else:
@@ -1116,7 +1132,7 @@ if menu_selection == "Analisis Perbandingan Global":
                 grouped = df_gs.groupby(["Video ID", "Video Title"])
                 for (vid_id, vid_title), group_df in grouped:
                     display_name = f"[{vid_id}] {make_safe_filename(vid_title)}"
-                    local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Model", "Language", "Ground Truth"]
+                    local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Reason", "LLM Model", "Language", "Ground Truth"]
                     df_temp = group_df.copy()
                     df_temp["No"] = range(1, len(df_temp) + 1)
                     # Filter existing columns to match local format
@@ -1610,9 +1626,10 @@ if st.session_state.df is not None:
                 "Time Description": st.column_config.TextColumn("Waktu", width="small"),
                 "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small"),
                 "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small"),
+                "LLM Reason": st.column_config.TextColumn("Alasan LLM", width="medium"),
                 "Ground Truth": st.column_config.TextColumn("Ground Truth", width="small"),
             },
-            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "Ground Truth"],
+            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "LLM Reason", "Ground Truth"],
             use_container_width=True,
             hide_index=True
         )
@@ -1636,8 +1653,9 @@ if st.session_state.df is not None:
                 "Time Description": st.column_config.TextColumn("Waktu", width="small", disabled=True),
                 "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small", disabled=True),
                 "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small", disabled=True),
+                "LLM Reason": st.column_config.TextColumn("Alasan LLM", width="medium", disabled=True),
             },
-            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "Ground Truth"],
+            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "LLM Reason", "Ground Truth"],
             use_container_width=True,
             key="data_editor",
             num_rows="fixed"
