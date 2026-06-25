@@ -229,7 +229,7 @@ Sistem ini menyediakan dua antarmuka penggunaan:
 
 ### Metode A: Menggunakan Dashboard Interaktif Streamlit (Sangat Direkomendasikan)
 
-Antarmuka web interaktif menyajikan visualisasi grafis, manajemen slang, pelabelan instan, dan pencetakan PDF.
+Antarmuka web interaktif menyajikan visualisasi grafis, manajemen slang, pelabelan instan, dan pencetakan PDF. 
 
 1. Jalankan server dashboard Streamlit:
    ```powershell
