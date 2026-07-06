@@ -111,9 +111,96 @@ def fetch_youtube_comments(url: str, limit: int = 100) -> list:
         logger.error(f"Terjadi kesalahan saat mengunduh komentar: {e}")
         return []
 
+def get_video_context(url: str) -> str:
+    """
+    Scrapes video metadata (Title, Description, Keywords) from YouTube page HTML.
+    Also attempts to extract video transcript/subtitles using youtube-transcript-api.
+    Returns a formatted string describing the video context.
+    """
+    import html
+    video_id = extract_video_id(url)
+    if not video_id:
+        return ""
+        
+    title = "Judul tidak diketahui"
+    description = "Deskripsi tidak tersedia"
+    keywords = "Kata kunci tidak tersedia"
+    transcript_text = "Transkrip tidak tersedia"
+    
+    # 1. Fetch metadata via scraping
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            html_text = response.text
+            
+            # Extract Title
+            title_match = re.search(r"<title>(.*?)</title>", html_text)
+            if title_match:
+                title = html.unescape(title_match.group(1).replace(" - YouTube", "").strip())
+                
+            # Extract Description
+            desc_match = re.search(r'<meta name="description" content="(.*?)"', html_text)
+            if not desc_match:
+                desc_match = re.search(r'<meta property="og:description" content="(.*?)"', html_text)
+            if desc_match:
+                description = html.unescape(desc_match.group(1).strip())
+                
+            # Extract Keywords
+            keys_match = re.search(r'<meta name="keywords" content="(.*?)"', html_text)
+            if keys_match:
+                keywords = html.unescape(keys_match.group(1).strip())
+    except Exception as e:
+        logger.error(f"Gagal mengambil metadata video untuk konteks: {e}")
+
+    # 2. Extract Transcript/Subtitles
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        transcript_list = None
+        try:
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
+        except Exception:
+            try:
+                transcripts = YouTubeTranscriptApi.list_transcripts(video_id)
+                for t in transcripts:
+                    transcript_list = t.fetch()
+                    break
+            except Exception:
+                pass
+                
+        if transcript_list:
+            lines = [entry.get("text", "") for entry in transcript_list]
+            full_transcript = " ".join(lines)
+            if len(full_transcript) > 2500:
+                transcript_text = full_transcript[:2500] + "..."
+            else:
+                transcript_text = full_transcript
+    except ImportError:
+        logger.warning("Pustaka youtube-transcript-api tidak terinstal. Transkrip dilewati.")
+    except Exception as e:
+        logger.warning(f"Gagal mengambil transkrip video: {e}")
+
+    # 3. Format Consolidated Context
+    desc_snippet = description[:800] + "..." if len(description) > 800 else description
+    
+    context_str = (
+        f"Judul Video: {title}\n"
+        f"Kata Kunci Video: {keywords}\n"
+        f"Deskripsi Video: {desc_snippet}\n"
+        f"Transkrip Video (Cuplikan): {transcript_text}"
+    )
+    return context_str
+
 if __name__ == "__main__":
     # Test script locally
     test_url = "https://www.youtube.com/shorts/a3Irz3zv8L0"
     comments = fetch_youtube_comments(test_url, limit=5)
     for i, c in enumerate(comments):
         print(f"\n[{i+1}] {c['author']}: {c['text'][:100]}")
+    
+    print("\n--- Test Video Context ---")
+    ctx = get_video_context(test_url)
+    print(ctx[:500])

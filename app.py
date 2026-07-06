@@ -22,7 +22,7 @@ from sklearn.metrics import (
 )
 
 from src.config import OUTPUT_FILE, YOUTUBE_VIDEO_URL, MAX_COMMENTS, HISTORY_DIR, APP_MODE
-from src.downloader import fetch_youtube_comments, get_video_title, extract_video_id
+from src.downloader import fetch_youtube_comments, get_video_title, extract_video_id, get_video_context
 from src.lexicon_analyzer import LexiconSentimentAnalyzer
 from src.llm_analyzer import LLMSentimentAnalyzer
 
@@ -145,6 +145,8 @@ if "lexicon_time" not in st.session_state:
     st.session_state.lexicon_time = None
 if "llm_time" not in st.session_state:
     st.session_state.llm_time = None
+if "analysis_mode" not in st.session_state:
+    st.session_state.analysis_mode = "Konteks Global"
 
 # Auto-load existing results if CSV exists
 if st.session_state.df is None and os.path.exists(OUTPUT_FILE):
@@ -165,6 +167,11 @@ if st.session_state.df is None and os.path.exists(OUTPUT_FILE):
             else:
                 df_loaded["Language"] = "id"
                 st.session_state.detected_lang = "id"
+            if "Analysis Mode" in df_loaded.columns:
+                st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
+            else:
+                df_loaded["Analysis Mode"] = "Konteks Global"
+                st.session_state.analysis_mode = "Konteks Global"
             st.session_state.df = df_loaded
             st.session_state.video_url = YOUTUBE_VIDEO_URL
             st.session_state.video_title = get_video_title(YOUTUBE_VIDEO_URL)
@@ -529,7 +536,7 @@ def load_all_gsheets_data():
     """
     Mengambil seluruh data riwayat sentimen dari worksheet Google Sheets 'Database_Sentimen'.
     """
-    cols = ["Video ID", "Video Title", "Video URL", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Reason", "LLM Model", "Language", "Ground Truth"]
+    cols = ["Video ID", "Video Title", "Video URL", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Reason", "LLM Model", "Language", "Analysis Mode", "Ground Truth"]
     if APP_MODE != "production" or conn is None:
         return pd.DataFrame(columns=cols)
         
@@ -588,6 +595,7 @@ def sync_video_to_gsheets(video_id, video_title, video_url, df_video):
             "LLM Reason": row["LLM Reason"] if "LLM Reason" in row else row.get("llm_reason", ""),
             "LLM Model": row["LLM Model"] if "LLM Model" in row else st.session_state.llm_model,
             "Language": row["Language"] if "Language" in row else st.session_state.detected_lang,
+            "Analysis Mode": row["Analysis Mode"] if "Analysis Mode" in row else st.session_state.analysis_mode,
             "Ground Truth": row.get("Ground Truth", "")
         })
     df_new = pd.DataFrame(new_rows)
@@ -740,6 +748,14 @@ if menu_selection == "Analisis Video Tunggal":
             help="Pilih model NVIDIA NIM yang ingin digunakan untuk klasifikasi."
         )
         
+        analysis_mode = st.sidebar.radio(
+            "Mode Analisis Sentimen",
+            options=["Konteks Global", "Konteks ke Video"],
+            index=0 if st.session_state.analysis_mode == "Konteks Global" else 1,
+            help="Pilih apakah sentimen dianalisis secara umum/global atau dikaitkan secara spesifik dengan konten video."
+        )
+        st.session_state.analysis_mode = analysis_mode
+
         force_refresh = st.sidebar.checkbox(
             "Paksa Ambil Baru (Force Refresh)",
             value=False,
@@ -787,6 +803,10 @@ if menu_selection == "Analisis Video Tunggal":
                         st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
                     if "Language" in df_loaded.columns:
                         st.session_state.detected_lang = str(df_loaded["Language"].iloc[0])
+                    if "Analysis Mode" in df_loaded.columns:
+                        st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
+                    else:
+                        st.session_state.analysis_mode = "Konteks Global"
                         
                     st.session_state.lexicon_time = None
                     st.session_state.llm_time = None
@@ -826,6 +846,11 @@ if menu_selection == "Analisis Video Tunggal":
                         else:
                             df_loaded["Language"] = "id"
                             st.session_state.detected_lang = "id"
+                        if "Analysis Mode" in df_loaded.columns:
+                            st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
+                        else:
+                            df_loaded["Analysis Mode"] = "Konteks Global"
+                            st.session_state.analysis_mode = "Konteks Global"
                         df_loaded.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
                         
                         st.session_state.df = df_loaded
@@ -838,12 +863,17 @@ if menu_selection == "Analisis Video Tunggal":
                         st.sidebar.error(f"Gagal memuat file riwayat: {e}")
                 else:
                     with st.status("Menjalankan Analisis Sentimen...", expanded=True) as status:
-                        # 1. Fetch Title
+                        # 1. Fetch Title & Context
                         status.write("Langkah 1/5: Mengambil informasi video YouTube...")
                         video_title = get_video_title(url_input)
                         safe_title = make_safe_filename(video_title)
                         history_filename = f"[{video_id}] {safe_title}.csv"
                         history_path = os.path.join(HISTORY_DIR, history_filename)
+                        
+                        video_context = None
+                        if st.session_state.analysis_mode == "Konteks ke Video":
+                            status.write("   - Mengambil teks isi dan metadata video (konteks)...")
+                            video_context = get_video_context(url_input)
                         
                         # Language Detection
                         status.write("   - Mendeteksi bahasa konten video...")
@@ -897,10 +927,25 @@ if menu_selection == "Analisis Video Tunggal":
                             for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
                                 batch = comments[i:i+batch_size]
                                 status.write(f"   - Mengirim LLM Batch {batch_idx + 1}/{num_batches}...")
-                                batch_results = llm_analyzer.analyze_batch(batch)
+                                batch_results = llm_analyzer.analyze_batch(batch, video_context=video_context)
                                 for r in batch_results:
                                     llm_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
                                     llm_reason_map[r["comment_id"]] = r.get("llm_reason", "")
+                            
+                            # Obtain DeepSeek V4 Pro sentiments for Ground Truth
+                            ds_sentiment_map = {}
+                            if model_input == "deepseek-ai/deepseek-v4-pro":
+                                ds_sentiment_map = llm_sentiment_map
+                            else:
+                                status.write("Langkah tambahan: Menghubungi DeepSeek V4 Pro untuk Ground Truth...")
+                                ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
+                                for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
+                                    batch = comments[i:i+batch_size]
+                                    status.write(f"   - Mengirim DeepSeek V4 Pro Batch {batch_idx + 1}/{num_batches}...")
+                                    batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
+                                    for r in batch_results:
+                                        ds_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
+                            
                             st.session_state.llm_time = time.time() - start_llm_time
                             
                             # 5. Combine results and map existing ground truths
@@ -912,7 +957,7 @@ if menu_selection == "Analisis Video Tunggal":
                                 cid = c["comment_id"]
                                 gt = existing_gts.get(cid, "")
                                 if not gt or str(gt).strip() == "":
-                                    gt = llm_sentiment_map.get(cid, "netral")
+                                    gt = ds_sentiment_map.get(cid, "netral")
                                 final_data.append({
                                     "No": idx + 1,
                                     "Comment ID": cid,
@@ -928,6 +973,7 @@ if menu_selection == "Analisis Video Tunggal":
                                     "LLM Reason": llm_reason_map.get(cid, ""),
                                     "LLM Model": model_input,
                                     "Language": c["language"],
+                                    "Analysis Mode": st.session_state.analysis_mode,
                                     "Ground Truth": gt
                                 })
                                 
@@ -985,6 +1031,11 @@ if menu_selection == "Analisis Video Tunggal":
                 else:
                     df_loaded["Language"] = "id"
                     st.session_state.detected_lang = "id"
+                if "Analysis Mode" in df_loaded.columns:
+                    st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
+                else:
+                    df_loaded["Analysis Mode"] = "Konteks Global"
+                    st.session_state.analysis_mode = "Konteks Global"
                 df_loaded.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
                 
                 filename_clean = selected_history[:-4]
@@ -1132,7 +1183,7 @@ if menu_selection == "Analisis Perbandingan Global":
                 grouped = df_gs.groupby(["Video ID", "Video Title"])
                 for (vid_id, vid_title), group_df in grouped:
                     display_name = f"[{vid_id}] {make_safe_filename(vid_title)}"
-                    local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Reason", "LLM Model", "Language", "Ground Truth"]
+                    local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Reason", "LLM Model", "Language", "Analysis Mode", "Ground Truth"]
                     df_temp = group_df.copy()
                     df_temp["No"] = range(1, len(df_temp) + 1)
                     # Filter existing columns to match local format
@@ -1530,10 +1581,39 @@ if st.session_state.df is not None:
             st.write(f"Komentar yang bisa diisi otomatis (kosong): **{fillable_count}**")
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("Isi Otomatis", use_container_width=True, help="Mengisi Ground Truth kosong dengan hasil prediksi LLM"):
+                if st.button("Isi Otomatis", use_container_width=True, help="Mengisi Ground Truth kosong dengan hasil prediksi DeepSeek V4 Pro"):
                     if fillable_count > 0:
-                        mask_to_fill = empty_gt_mask
-                        st.session_state.df.loc[mask_to_fill, "Ground Truth"] = st.session_state.df.loc[mask_to_fill, "LLM Sentiment"]
+                        with st.spinner("Mengisi Ground Truth menggunakan DeepSeek V4 Pro..."):
+                            # Check if active model is already deepseek-v4-pro
+                            if st.session_state.llm_model == "deepseek-ai/deepseek-v4-pro":
+                                st.session_state.df.loc[empty_gt_mask, "Ground Truth"] = st.session_state.df.loc[empty_gt_mask, "LLM Sentiment"]
+                            else:
+                                # Fetch on the fly
+                                rows_to_fill = st.session_state.df[empty_gt_mask]
+                                comments_to_analyze = []
+                                for idx, row in rows_to_fill.iterrows():
+                                    comments_to_analyze.append({
+                                        "comment_id": row["Comment ID"],
+                                        "text": row["Original Comment"]
+                                    })
+                                
+                                video_context = None
+                                if st.session_state.analysis_mode == "Konteks ke Video" and st.session_state.video_url:
+                                    video_context = get_video_context(st.session_state.video_url)
+                                
+                                ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
+                                ds_results = []
+                                batch_size = 20
+                                for i in range(0, len(comments_to_analyze), batch_size):
+                                    batch = comments_to_analyze[i:i+batch_size]
+                                    batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
+                                    ds_results.extend(batch_results)
+                                
+                                for r in ds_results:
+                                    cid = r["comment_id"]
+                                    sentiment = r["llm_sentiment"]
+                                    st.session_state.df.loc[st.session_state.df["Comment ID"] == cid, "Ground Truth"] = sentiment
+
                         st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
                         
                         # Sync dengan riwayat lokal & GSheets

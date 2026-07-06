@@ -9,5 +9,6 @@ openpyxl>=3.1.0
 streamlit>=1.25.0
 reportlab>=4.0.0
 st-gsheets-connection>=0.0.1
+youtube-transcript-api>=1.2.4
 
 

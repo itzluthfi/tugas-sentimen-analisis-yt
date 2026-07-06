@@ -47,11 +47,11 @@ class LLMSentimentAnalyzer:
             return choices[0].get("message", {}).get("content", "").strip()
         return ""
 
-    def analyze_batch(self, comments: list[dict]) -> list[dict]:
+    def analyze_batch(self, comments: list[dict], video_context: str = None) -> list[dict]:
         """
         Analyzes a list of comments in a single API call (batching) to optimize speed and API quota.
         Each comment in the input list should be a dict with at least 'comment_id' and 'text'.
-        Returns a list of dicts with 'comment_id' and 'llm_sentiment'.
+        Returns a list of dicts with 'comment_id', 'llm_sentiment', and 'llm_reason'.
         """
         if not self.api_key:
             raise ValueError("NVIDIA API Key tidak ditemukan. Silakan konfigurasi file .env Anda.")
@@ -63,23 +63,45 @@ class LLMSentimentAnalyzer:
             
         comments_payload = "\n".join(formatted_comments)
         
-        system_prompt = (
-            "Anda adalah asisten AI yang ahli dalam analisis sentimen teks Bahasa Indonesia, "
-            "termasuk bahasa daerah (seperti Jawa, Sunda) dan singkatan/slang gaul internet.\n"
-            "Tugas Anda adalah menentukan sentimen beserta alasannya dari daftar komentar YouTube yang diberikan.\n\n"
-            "Kategori sentimen wajib berupa salah satu dari: 'positif', 'negatif', atau 'netral'.\n"
-            "Aturan Sentimen:\n"
-            "- 'positif': Komentar berisi pujian, apresiasi, rasa senang, dukungan, kelucuan positif, atau rekomendasi bagus.\n"
-            "- 'negatif': Komentar berisi kritik, keluhan, cacian, kekecewaan, ketidakpuasan, atau hujatan.\n"
-            "- 'netral': Komentar berupa pertanyaan biasa, pernyataan umum, tidak menunjukkan emosi kuat, atau di luar konteks video.\n\n"
-            "Alasan (reason) harus berupa penjelasan singkat (1 kalimat pendek) dalam Bahasa Indonesia mengapa komentar tersebut dikategorikan ke dalam sentimen tersebut.\n\n"
-            "Format Output harus berupa JSON ARRAY murni yang berisi objek dengan format:\n"
-            "[\n"
-            "  {\"comment_id\": \"ID_KOMENTAR\", \"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"},\n"
-            "  ...\n"
-            "]\n"
-            "Jangan menambahkan teks penjelasan, pengantar, atau penutup apapun di luar JSON array tersebut."
-        )
+        if video_context:
+            system_prompt = (
+                "Anda adalah asisten AI yang ahli dalam analisis sentimen teks Bahasa Indonesia, "
+                "termasuk bahasa daerah (seperti Jawa, Sunda) dan singkatan/slang gaul internet.\n"
+                f"Tugas Anda adalah menentukan sentimen beserta alasannya dari daftar komentar YouTube khusus dalam kaitannya dengan isi/konten video berikut:\n"
+                f"=== KONTEKS VIDEO ===\n"
+                f"{video_context}\n"
+                f"=====================\n\n"
+                "Kategori sentimen wajib berupa salah satu dari: 'positif', 'negatif', atau 'netral'.\n"
+                "Aturan Sentimen Berdasarkan Konteks Video:\n"
+                "- 'positif': Komentar yang menunjukkan rasa suka, apresiasi, pujian, dukungan, kesepakatan, ketertarikan, atau pujian terhadap isi video, kreator, pembicaraan, atau topik yang dibahas di video tersebut.\n"
+                "- 'negatif': Komentar yang berisi kritik, keluhan, cacian, kekecewaan, ketidakpuasan, ketidaksepakatan, atau sentimen buruk terhadap isi video, kreator, pembicaraan, atau topik yang dibahas di video.\n"
+                "- 'netral': Komentar yang bersifat general, pertanyaan biasa tanpa sentimen, spam link, percakapan di luar topik video, atau tidak menunjukkan sentimen positif/negatif yang jelas terhadap isi/topik video tersebut.\n\n"
+                "Alasan (reason) harus berupa penjelasan singkat (1 kalimat pendek) dalam Bahasa Indonesia mengapa komentar tersebut dikategorikan ke dalam sentimen tersebut berdasarkan kaitannya dengan video.\n\n"
+                "Format Output harus berupa JSON ARRAY murni yang berisi objek dengan format:\n"
+                "[\n"
+                "  {\"comment_id\": \"ID_KOMENTAR\", \"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"},\n"
+                "  ...\n"
+                "]\n"
+                "Jangan menambahkan teks penjelasan, pengantar, atau penutup apapun di luar JSON array tersebut."
+            )
+        else:
+            system_prompt = (
+                "Anda adalah asisten AI yang ahli dalam analisis sentimen teks Bahasa Indonesia, "
+                "termasuk bahasa daerah (seperti Jawa, Sunda) dan singkatan/slang gaul internet.\n"
+                "Tugas Anda adalah menentukan sentimen beserta alasannya dari daftar komentar YouTube yang diberikan secara global.\n\n"
+                "Kategori sentimen wajib berupa salah satu dari: 'positif', 'negatif', atau 'netral'.\n"
+                "Aturan Sentimen:\n"
+                "- 'positif': Komentar berisi pujian, apresiasi, rasa senang, dukungan, kelucuan positif, atau rekomendasi bagus.\n"
+                "- 'negatif': Komentar berisi kritik, keluhan, cacian, kekecewaan, ketidakpuasan, atau hujatan.\n"
+                "- 'netral': Komentar berupa pertanyaan biasa, pernyataan umum, tidak menunjukkan emosi kuat, atau di luar konteks video.\n\n"
+                "Alasan (reason) harus berupa penjelasan singkat (1 kalimat pendek) dalam Bahasa Indonesia mengapa komentar tersebut dikategorikan ke dalam sentimen tersebut.\n\n"
+                "Format Output harus berupa JSON ARRAY murni yang berisi objek dengan format:\n"
+                "[\n"
+                "  {\"comment_id\": \"ID_KOMENTAR\", \"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"},\n"
+                "  ...\n"
+                "]\n"
+                "Jangan menambahkan teks penjelasan, pengantar, atau penutup apapun di luar JSON array tersebut."
+            )
         
         user_prompt = f"Analisis sentimen untuk komentar-komentar berikut:\n\n{comments_payload}"
         
@@ -125,7 +147,7 @@ class LLMSentimentAnalyzer:
                 res = sentiment_map.get(cid)
                 if not res:
                     logger.warning(f"Komentar ID {cid} tidak ditemukan dalam output LLM. Menganalisis secara individu.")
-                    sentiment, reason = self.analyze_single(c["text"])
+                    sentiment, reason = self.analyze_single(c["text"], video_context)
                 else:
                     sentiment, reason = res
                 output_results.append({
@@ -139,18 +161,29 @@ class LLMSentimentAnalyzer:
         except Exception as e:
             logger.error(f"Gagal parse JSON dari respons LLM: {e}. Raw response: {raw_response[:200]}...")
             logger.info("Menjalankan fallback ke analisis satu per satu untuk batch ini.")
-            return self._fallback_single(comments)
+            return self._fallback_single(comments, video_context)
 
-    def analyze_single(self, text: str) -> tuple[str, str]:
+    def analyze_single(self, text: str, video_context: str = None) -> tuple[str, str]:
         """
         Analyzes a single comment. Useful for fallback.
         Returns: (sentiment, reason)
         """
-        system_prompt = (
-            "Anda adalah ahli analisis sentimen teks Bahasa Indonesia.\n"
-            "Tentukan sentimen komentar YouTube ini menjadi: 'positif', 'negatif', atau 'netral' beserta alasan singkatnya (1 kalimat).\n"
-            "Format Output harus berupa JSON murni dengan format: {\"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"}"
-        )
+        if video_context:
+            system_prompt = (
+                "Anda adalah ahli analisis sentimen teks Bahasa Indonesia.\n"
+                f"Tentukan sentimen komentar YouTube ini khusus dalam kaitannya dengan isi/konten video berikut:\n"
+                f"=== KONTEKS VIDEO ===\n"
+                f"{video_context}\n"
+                f"=====================\n\n"
+                "Tentukan sentimen komentar YouTube ini menjadi: 'positif', 'negatif', atau 'netral' beserta alasan singkatnya (1 kalimat).\n"
+                "Format Output harus berupa JSON murni dengan format: {\"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"}"
+            )
+        else:
+            system_prompt = (
+                "Anda adalah ahli analisis sentimen teks Bahasa Indonesia.\n"
+                "Tentukan sentimen komentar YouTube ini secara global menjadi: 'positif', 'negatif', atau 'netral' beserta alasan singkatnya (1 kalimat).\n"
+                "Format Output harus berupa JSON murni dengan format: {\"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"}"
+            )
         
         messages = [
             {"role": "system", "content": system_prompt},
@@ -183,13 +216,13 @@ class LLMSentimentAnalyzer:
             
         return sentiment, reason
 
-    def _fallback_single(self, comments: list[dict]) -> list[dict]:
+    def _fallback_single(self, comments: list[dict], video_context: str = None) -> list[dict]:
         """
         Fallback method that analyzes comments one by one.
         """
         results = []
         for c in comments:
-            sentiment, reason = self.analyze_single(c["text"])
+            sentiment, reason = self.analyze_single(c["text"], video_context)
             results.append({
                 "comment_id": c["comment_id"],
                 "llm_sentiment": sentiment,
