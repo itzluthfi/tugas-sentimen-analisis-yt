@@ -952,9 +952,12 @@ if menu_selection == "Analisis Video Tunggal":
                                         for r in batch_results:
                                             ds_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
                                 except Exception as e:
-                                    status.update(label="Gagal memproses Ground Truth (DeepSeek V4 Pro)!", state="error", expanded=True)
-                                    st.error(f"Gagal memproses Ground Truth menggunakan DeepSeek V4 Pro: {e}. Server API DeepSeek mungkin sedang padat atau mencapai batas pemakaian.")
-                                    st.stop()
+                                    status.write("⚠️ Gagal menghubungi DeepSeek V4 Pro. Menggunakan fallback model utama...")
+                                    st.sidebar.warning(
+                                        f"Gagal memproses Ground Truth menggunakan DeepSeek V4 Pro ({e}). "
+                                        f"Sebagai cadangan, Ground Truth otomatis disalin dari prediksi model utama ({model_input})."
+                                    )
+                                    ds_sentiment_map = llm_sentiment_map
                             
                             st.session_state.llm_time = time.time() - start_llm_time
                             
@@ -1653,9 +1656,27 @@ if st.session_state.df is not None:
                                         batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
                                         ds_results.extend(batch_results)
                                 except Exception as e:
-                                    status.update(label="Gagal memproses Ground Truth (DeepSeek V4 Pro)!", state="error", expanded=True)
-                                    st.error(f"Gagal memproses pengisian otomatis: {e}. Server API DeepSeek mungkin sedang padat atau mencapai batas pemakaian.")
-                                    st.stop()
+                                    status.write("⚠️ Gagal menghubungi DeepSeek V4 Pro. Mencoba fallback ke DeepSeek V4 Flash...")
+                                    try:
+                                        fallback_model = "deepseek-ai/deepseek-v4-flash"
+                                        if st.session_state.llm_model == "deepseek-ai/deepseek-v4-pro":
+                                            fallback_model = "deepseek-ai/deepseek-v4-flash"
+                                        else:
+                                            fallback_model = st.session_state.llm_model
+                                            
+                                        status.write(f"Menganalisis dengan model alternatif: {fallback_model}...")
+                                        ds_analyzer = LLMSentimentAnalyzer(model=fallback_model)
+                                        ds_results = []
+                                        for i in range(0, len(comments_to_analyze), batch_size):
+                                            batch_idx = i // batch_size
+                                            batch = comments_to_analyze[i:i+batch_size]
+                                            status.write(f"   - Memproses Batch {batch_idx + 1}/{num_batches} (Fallback)...")
+                                            batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
+                                            ds_results.extend(batch_results)
+                                    except Exception as e_fallback:
+                                        status.update(label="Gagal memproses Ground Truth!", state="error", expanded=True)
+                                        st.error(f"Gagal memproses pengisian otomatis bahkan setelah mencoba fallback: {e_fallback}. Silakan periksa koneksi internet atau API Key Anda.")
+                                        st.stop()
                                 
                                 status.write("Memetakan hasil prediksi ke tabel...")
                                 for r in ds_results:
