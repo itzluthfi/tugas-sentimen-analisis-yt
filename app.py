@@ -1160,6 +1160,13 @@ if menu_selection == "Analisis Perbandingan Global":
     st.markdown("Halaman analisis akumulatif yang menggabungkan seluruh atau sebagian riwayat video untuk perbandingan akurasi jangka panjang.")
     st.markdown("---")
     
+    # Filter Mode Analisis
+    filter_mode = st.selectbox(
+        ":material/filter_list: Filter Riwayat Berdasarkan Mode Analisis Sentimen",
+        options=["Semua Mode", "Hanya Konteks Global", "Hanya Konteks ke Video"],
+        help="Saring video riwayat yang ditampilkan berdasarkan mode analisis yang digunakan."
+    )
+    
     # 1. Bangun dictionary riwayat (gabungan Lokal + Google Sheets)
     history_videos = {}
     
@@ -1192,6 +1199,23 @@ if menu_selection == "Analisis Perbandingan Global":
         except Exception:
             pass
             
+    # Saring riwayat berdasarkan filter_mode
+    filtered_history_videos = {}
+    for key, df_vid in history_videos.items():
+        mode_val = "Konteks Global"
+        if "Analysis Mode" in df_vid.columns and len(df_vid) > 0:
+            mode_val = str(df_vid["Analysis Mode"].iloc[0])
+            if pd.isna(df_vid["Analysis Mode"].iloc[0]) or not mode_val.strip():
+                mode_val = "Konteks Global"
+        
+        if filter_mode == "Semua Mode":
+            filtered_history_videos[key] = df_vid
+        elif filter_mode == "Hanya Konteks Global" and mode_val == "Konteks Global":
+            filtered_history_videos[key] = df_vid
+        elif filter_mode == "Hanya Konteks ke Video" and mode_val == "Konteks ke Video":
+            filtered_history_videos[key] = df_vid
+    
+    history_videos = filtered_history_videos
     history_keys = sorted(list(history_videos.keys()), reverse=True)
     
     # Inisialisasi daftar file aktif di session state
@@ -1530,7 +1554,7 @@ st.markdown("---")
 if st.session_state.df is not None:
     # Header: Video Info
     st.markdown(f"### :material/movie: **{st.session_state.video_title}**")
-    col_hdr1, col_hdr2, col_hdr3 = st.columns(3)
+    col_hdr1, col_hdr2, col_hdr3, col_hdr4 = st.columns(4)
     with col_hdr1:
         st.markdown(f":material/link: **Link Video:** [{st.session_state.video_url}]({st.session_state.video_url})")
     with col_hdr2:
@@ -1552,6 +1576,8 @@ if st.session_state.df is not None:
         else:
             lang_label = "Inggris (EN)" if st.session_state.detected_lang == "en" else "Indonesia (ID)"
         st.markdown(f":material/translate: **Bahasa Terdeteksi:** `{lang_label}`")
+    with col_hdr4:
+        st.markdown(f":material/settings: **Mode Analisis:** `{st.session_state.analysis_mode}`")
     
     st.markdown("---")
     
