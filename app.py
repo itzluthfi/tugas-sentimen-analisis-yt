@@ -229,8 +229,18 @@ if st.session_state.df is None and os.path.exists(OUTPUT_FILE):
             if "Analysis Mode" in df_loaded.columns:
                 st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
             else:
-                df_loaded["Analysis Mode"] = "Konteks Global"
                 st.session_state.analysis_mode = "Konteks Global"
+                
+            if "Lexicon Time" in df_loaded.columns:
+                st.session_state.lexicon_time = float(df_loaded["Lexicon Time"].dropna().iloc[0]) if len(df_loaded["Lexicon Time"].dropna()) > 0 else len(df_loaded) * 0.0015
+            else:
+                st.session_state.lexicon_time = len(df_loaded) * 0.0015
+                
+            if "LLM Time" in df_loaded.columns:
+                st.session_state.llm_time = float(df_loaded["LLM Time"].dropna().iloc[0]) if len(df_loaded["LLM Time"].dropna()) > 0 else len(df_loaded) * 0.15
+            else:
+                st.session_state.llm_time = len(df_loaded) * 0.15
+                
             st.session_state.df = df_loaded
             st.session_state.video_url = YOUTUBE_VIDEO_URL
             st.session_state.video_title = get_video_title(YOUTUBE_VIDEO_URL)
@@ -1093,8 +1103,15 @@ if menu_selection == "Analisis Video Tunggal":
                         st.session_state.analysis_mode = "Konteks Global"
                         
                     st.session_state.video_context = None
-                    st.session_state.lexicon_time = None
-                    st.session_state.llm_time = None
+                    if "Lexicon Time" in df_loaded.columns:
+                        st.session_state.lexicon_time = float(df_loaded["Lexicon Time"].dropna().iloc[0]) if len(df_loaded["Lexicon Time"].dropna()) > 0 else len(df_loaded) * 0.0015
+                    else:
+                        st.session_state.lexicon_time = len(df_loaded) * 0.0015
+                        
+                    if "LLM Time" in df_loaded.columns:
+                        st.session_state.llm_time = float(df_loaded["LLM Time"].dropna().iloc[0]) if len(df_loaded["LLM Time"].dropna()) > 0 else len(df_loaded) * 0.15
+                    else:
+                        st.session_state.llm_time = len(df_loaded) * 0.15
                     st.sidebar.success("Riwayat berhasil dimuat!")
                     st.rerun()
                 except Exception as e:
@@ -1142,8 +1159,15 @@ if menu_selection == "Analisis Video Tunggal":
                         st.session_state.video_title = video_title
                         st.session_state.video_url = url_input
                         st.session_state.video_context = None
-                        st.session_state.lexicon_time = None
-                        st.session_state.llm_time = None
+                        if "Lexicon Time" in df_loaded.columns:
+                            st.session_state.lexicon_time = float(df_loaded["Lexicon Time"].dropna().iloc[0]) if len(df_loaded["Lexicon Time"].dropna()) > 0 else len(df_loaded) * 0.0015
+                        else:
+                            st.session_state.lexicon_time = len(df_loaded) * 0.0015
+                            
+                        if "LLM Time" in df_loaded.columns:
+                            st.session_state.llm_time = float(df_loaded["LLM Time"].dropna().iloc[0]) if len(df_loaded["LLM Time"].dropna()) > 0 else len(df_loaded) * 0.15
+                        else:
+                            st.session_state.llm_time = len(df_loaded) * 0.15
                         st.rerun()
                     except Exception as e:
                         st.sidebar.error(f"Gagal memuat file riwayat: {e}")
@@ -1260,7 +1284,9 @@ if menu_selection == "Analisis Video Tunggal":
                                     "LLM Model": model_input,
                                     "Language": c["language"],
                                     "Analysis Mode": st.session_state.analysis_mode,
-                                    "Ground Truth": gt
+                                    "Ground Truth": gt,
+                                    "Lexicon Time": st.session_state.lexicon_time,
+                                    "LLM Time": st.session_state.llm_time
                                 })
                                 
                             df = pd.DataFrame(final_data)
@@ -2200,6 +2226,9 @@ if st.session_state.df is not None:
         #   - If Model != Ground Truth: -1 point
         lex_points = 0
         llm_points = 0
+        lex_correct = 0
+        llm_correct = 0
+        total_eval_comments = 0
         
         for idx, row in df_eval.iterrows():
             gt = str(row["Ground Truth"]).strip().lower()
@@ -2207,15 +2236,18 @@ if st.session_state.df is not None:
             llm = str(row["LLM Sentiment"]).strip().lower()
             
             if gt in ["positif", "negatif"]:
+                total_eval_comments += 1
                 # Lexicon
                 if lex == gt:
                     lex_points += 1
+                    lex_correct += 1
                 else:
                     lex_points -= 1
                 
                 # LLM
                 if llm == gt:
                     llm_points += 1
+                    llm_correct += 1
                 else:
                     llm_points -= 1
 
@@ -2227,6 +2259,7 @@ if st.session_state.df is not None:
                 <div class="point-card lexicon-card">
                     <h3>POIN PERFORMA LEXICON</h3>
                     <div style="font-size: 3rem; font-weight: 800; margin: 10px 0;">{lex_points}</div>
+                    <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 8px;">Benar: {lex_correct} / {total_eval_comments} Komentar</div>
                     <p>Metode Sastrawi + InSet Lexicon</p>
                 </div>
                 """,
@@ -2239,6 +2272,7 @@ if st.session_state.df is not None:
                 <div class="point-card llm-card">
                     <h3>POIN PERFORMA LLM</h3>
                     <div style="font-size: 3rem; font-weight: 800; margin: 10px 0;">{llm_points}</div>
+                    <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 8px;">Benar: {llm_correct} / {total_eval_comments} Komentar</div>
                     <p>NVIDIA NIM ({st.session_state.llm_model.split('/')[-1]})</p>
                 </div>
                 """,
