@@ -2289,7 +2289,12 @@ if st.session_state.df is not None:
                 unsafe_allow_html=True
             )
         # Render Points Donut Charts for Accuracy (Correct vs Incorrect)
-        fig_perf, (ax_p1, ax_p2) = plt.subplots(1, 2, figsize=(10, 4.5))
+        # Helper to format percentage and count inside pie slices
+        def pct_val_fmt(pct, allvals):
+            absolute = int(round(pct/100.*np.sum(allvals)))
+            return f"{pct:.1f}%\n({absolute} data)"
+            
+        fig_perf, (ax_p1, ax_p2) = plt.subplots(1, 2, figsize=(8, 3))
         
         # Colors: Green for Correct, Red for Incorrect
         perf_colors = ["#2ecc71", "#e74c3c"]
@@ -2302,14 +2307,14 @@ if st.session_state.df is not None:
             lex_data = [(s, l) for s, l in zip(lex_sizes, lex_labels) if s > 0]
             if lex_data:
                 sizes, labels = zip(*lex_data)
-                ax_p1.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+                ax_p1.pie(sizes, labels=labels, autopct=lambda pct: pct_val_fmt(pct, sizes), startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.70, textprops=dict(color="black", weight="bold", fontsize=8))
                 centre_circle = plt.Circle((0,0), 0.50, fc='white')
                 ax_p1.add_artist(centre_circle)
-                ax_p1.set_title("Akurasi Lexicon (Benar vs Salah)", fontsize=11, weight="bold")
+                ax_p1.set_title("Akurasi Lexicon (Benar vs Salah)", fontsize=9, weight="bold")
             else:
-                ax_p1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+                ax_p1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center', fontsize=9)
         else:
-            ax_p1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+            ax_p1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center', fontsize=9)
             
         # LLM Donut
         llm_incorrect = total_eval_comments - llm_correct
@@ -2319,14 +2324,14 @@ if st.session_state.df is not None:
             llm_data = [(s, l) for s, l in zip(llm_sizes, llm_labels) if s > 0]
             if llm_data:
                 sizes, labels = zip(*llm_data)
-                ax_p2.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+                ax_p2.pie(sizes, labels=labels, autopct=lambda pct: pct_val_fmt(pct, sizes), startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.70, textprops=dict(color="black", weight="bold", fontsize=8))
                 centre_circle = plt.Circle((0,0), 0.50, fc='white')
                 ax_p2.add_artist(centre_circle)
-                ax_p2.set_title("Akurasi LLM (Benar vs Salah)", fontsize=11, weight="bold")
+                ax_p2.set_title("Akurasi LLM (Benar vs Salah)", fontsize=9, weight="bold")
             else:
-                ax_p2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+                ax_p2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center', fontsize=9)
         else:
-            ax_p2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+            ax_p2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center', fontsize=9)
             
         plt.tight_layout()
         st.pyplot(fig_perf)
