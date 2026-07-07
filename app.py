@@ -63,34 +63,44 @@ st.set_page_config(
 # Custom CSS for Premium Design Aesthetics
 st.markdown("""
 <style>
-    /* Main container styling */
-    .reportview-container {
-        background: #fdfdfd;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+
+    /* Global Fonts & Body background layering */
+    .stApp {
+        background-color: #f8fafc;
+        font-family: 'Inter', sans-serif;
     }
     
     /* Title styling */
-    h1 {
-        font-family: 'Outfit', 'Inter', sans-serif;
-        color: #1e293b;
-        font-weight: 800;
-        letter-spacing: -0.5px;
+    h1, h2, h3 {
+        font-family: 'Outfit', sans-serif !important;
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.5px !important;
     }
     
-    /* Cards styling */
+    /* Premium Metric Card */
     .metric-card {
-        background-color: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        background: #ffffff;
+        border: 1px solid #edf2f7;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 4px 20px -2px rgba(50, 50, 93, 0.04), 0 2px 8px -1px rgba(0, 0, 0, 0.02);
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         margin-bottom: 20px;
+    }
+    .metric-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 24px -10px rgba(50, 50, 93, 0.08), 0 4px 12px -5px rgba(0, 0, 0, 0.03);
+        border-color: #e2e8f0;
     }
     
     .metric-title {
-        font-size: 0.875rem;
-        color: #64748b;
+        font-size: 0.8rem;
+        color: #94a3b8;
         font-weight: 600;
         text-transform: uppercase;
+        letter-spacing: 0.8px;
         margin-bottom: 8px;
     }
     
@@ -98,30 +108,77 @@ st.markdown("""
         font-size: 2.25rem;
         font-weight: 700;
         color: #0f172a;
+        font-family: 'Outfit', sans-serif;
     }
-    
-    /* Point board styling */
+
+    /* Point board cards with sleek gradients */
     .point-card {
-        border-radius: 12px;
-        padding: 24px;
+        border-radius: 16px;
+        padding: 28px;
         text-align: center;
         color: white;
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+        transition: transform 0.2s ease;
+    }
+    .point-card:hover {
+        transform: scale(1.02);
     }
     .lexicon-card {
-        background: linear-gradient(135deg, #3498db, #2980b9);
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
     }
     .llm-card {
-        background: linear-gradient(135deg, #2ecc71, #27ae60);
+        background: linear-gradient(135deg, #10b981, #047857);
     }
     
     /* Info box styling */
     .info-box {
-        background-color: #f8fafc;
-        border-left: 4px solid #64748b;
-        padding: 15px;
-        border-radius: 4px 12px 12px 4px;
+        background-color: #ffffff;
+        border-left: 4px solid #3b82f6;
+        padding: 16px 20px;
+        border-radius: 4px 16px 16px 4px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.02);
         margin-bottom: 20px;
+        border-top: 1px solid #f1f5f9;
+        border-right: 1px solid #f1f5f9;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    /* Streamlit Tab Custom Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: #f1f5f9;
+        padding: 6px;
+        border-radius: 12px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 8px;
+        color: #64748b;
+        font-weight: 500;
+        font-size: 0.9rem;
+        border: none;
+        padding: 0 16px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #ffffff !important;
+        color: #0f172a !important;
+        font-weight: 600 !important;
+        box-shadow: 0 2px 8px -1px rgba(0,0,0,0.05);
+    }
+
+    /* Sidebar background & border */
+    section[data-testid="stSidebar"] {
+        background-color: #ffffff;
+        border-right: 1px solid #e2e8f0;
+    }
+
+    /* Buttons premium styling */
+    .stButton>button {
+        border-radius: 10px !important;
+        font-weight: 500 !important;
+        transition: all 0.2s ease !important;
     }
 </style>
 """, unsafe_allow_html=True)
