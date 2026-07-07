@@ -409,6 +409,154 @@ def convert_df_to_excel(df, video_title, video_url):
             
     return output.getvalue()
 
+# Helper to convert DataFrame to a PowerPoint presentation (.pptx) report in memory
+def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    
+    prs = Presentation()
+    
+    # slide 1: Title Slide (using layout 0)
+    title_slide_layout = prs.slide_layouts[0]
+    slide = prs.slides.add_slide(title_slide_layout)
+    title = slide.shapes.title
+    subtitle = slide.placeholders[1]
+    
+    title.text = "SEMANTIKA"
+    subtitle.text = f"Laporan Analisis Sentimen Komentar YouTube\n\nVideo: {video_title}\nMode: {analysis_mode}\nModel LLM: {llm_model}"
+    
+    # slide 2: Ringkasan Dataset (using layout 1 - Title and Content)
+    slide_layout = prs.slide_layouts[1]
+    slide = prs.slides.add_slide(slide_layout)
+    title_shape = slide.shapes.title
+    title_shape.text = "Ringkasan Analisis Dataset"
+    
+    tf = slide.placeholders[1].text_frame
+    tf.text = "Detail Analisis Video:"
+    
+    p = tf.add_paragraph()
+    p.text = f"• Judul Video: {video_title}"
+    p.level = 1
+    
+    p = tf.add_paragraph()
+    p.text = f"• URL Video: {video_url}"
+    p.level = 1
+    
+    p = tf.add_paragraph()
+    p.text = f"• Total Komentar Teranalisis: {len(df)} komentar"
+    p.level = 1
+    
+    # Language distribution
+    lang_info = "Indonesia"
+    if "Language" in df.columns:
+        lang_counts = df["Language"].value_counts()
+        lang_details = []
+        for lang, count in lang_counts.items():
+            pct = (count / len(df) * 100) if len(df) > 0 else 0
+            name = "Indonesia (ID)" if str(lang).strip().lower() == "id" else ("Inggris (EN)" if str(lang).strip().lower() == "en" else str(lang).upper())
+            lang_details.append(f"{name} {pct:.1f}%")
+        lang_info = " & ".join(lang_details)
+        
+    p = tf.add_paragraph()
+    p.text = f"• Bahasa Terdeteksi: {lang_info}"
+    p.level = 1
+    
+    # slide 3: Distribusi Sentimen
+    slide = prs.slides.add_slide(slide_layout)
+    title_shape = slide.shapes.title
+    title_shape.text = "Hasil Distribusi Sentimen"
+    
+    tf = slide.placeholders[1].text_frame
+    tf.text = "Perbandingan Hasil Klasifikasi Sentimen:"
+    
+    lex_pos = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "positif"])
+    lex_neg = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "negatif"])
+    lex_net = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "netral"])
+    
+    llm_pos = len(df[df["LLM Sentiment"].str.lower().str.strip() == "positif"])
+    llm_neg = len(df[df["LLM Sentiment"].str.lower().str.strip() == "negatif"])
+    llm_net = len(df[df["LLM Sentiment"].str.lower().str.strip() == "netral"])
+    
+    p = tf.add_paragraph()
+    p.text = f"• Lexicon-Based Sentimen:"
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = f"  - Positif: {lex_pos} | Negatif: {lex_neg} | Netral: {lex_net}"
+    p.level = 2
+    
+    p = tf.add_paragraph()
+    p.text = f"• LLM-Based Sentimen ({llm_model}):"
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = f"  - Positif: {llm_pos} | Negatif: {llm_neg} | Netral: {llm_net}"
+    p.level = 2
+    
+    # slide 4: Evaluasi Akurasi (jika ada Ground Truth)
+    df_eval = df.dropna(subset=["Ground Truth"]).copy()
+    df_eval = df_eval[df_eval["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
+    
+    slide = prs.slides.add_slide(slide_layout)
+    title_shape = slide.shapes.title
+    title_shape.text = "Evaluasi Performa & Akurasi"
+    
+    tf = slide.placeholders[1].text_frame
+    if len(df_eval) > 0:
+        tf.text = f"Berdasarkan {len(df_eval)} data Ground Truth yang diverifikasi:"
+        
+        y_true = df_eval["Ground Truth"].str.strip().str.lower()
+        y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
+        y_llm = df_eval["LLM Sentiment"].str.strip().str.lower()
+        
+        lex_acc = accuracy_score(y_true, y_lexicon) if len(y_true) > 0 else 0
+        llm_acc = accuracy_score(y_true, y_llm) if len(y_true) > 0 else 0
+        
+        agree_mask = df["Lexicon Sentiment"] == df["LLM Sentiment"]
+        pct_agreement = (agree_mask.sum() / len(df) * 100) if len(df) > 0 else 0
+        
+        p = tf.add_paragraph()
+        p.text = f"• Akurasi Lexicon-Based terhadap Ground Truth: {lex_acc*100:.1f}%"
+        p.level = 1
+        
+        p = tf.add_paragraph()
+        p.text = f"• Akurasi LLM-Based terhadap Ground Truth: {llm_acc*100:.1f}%"
+        p.level = 1
+        
+        p = tf.add_paragraph()
+        p.text = f"• Tingkat Kesepakatan Model (Agreement Rate): {pct_agreement:.1f}%"
+        p.level = 1
+    else:
+        tf.text = "Belum ada data evaluasi Ground Truth."
+        p = tf.add_paragraph()
+        p.text = "• Isilah kolom Ground Truth pada tabel untuk mengaktifkan metrik evaluasi performa akurasi pada slide ini."
+        p.level = 1
+        
+    # slide 5: Kesimpulan Laporan
+    slide = prs.slides.add_slide(slide_layout)
+    title_shape = slide.shapes.title
+    title_shape.text = "Kesimpulan Laporan"
+    
+    tf = slide.placeholders[1].text_frame
+    tf.text = "Temuan Utama Proyek:"
+    
+    p = tf.add_paragraph()
+    p.text = "• Metode LLM-based memberikan pemahaman kontekstual yang lebih mendalam dibandingkan metode pencocokan kata Lexicon."
+    p.level = 1
+    
+    p = tf.add_paragraph()
+    p.text = "• Mode analisis kontekstual menyaring kebisingan komentar (out-of-context) secara efektif."
+    p.level = 1
+    
+    p = tf.add_paragraph()
+    p.text = "• Integrasi Google Sheets dan database lokal memudahkan backup dan pengarsipan data secara dinamis."
+    p.level = 1
+    
+    # Save presentation to memory stream
+    binary_output = io.BytesIO()
+    prs.save(binary_output)
+    binary_output.seek(0)
+    return binary_output.getvalue()
+
 # Helper to convert DataFrame to a beautifully styled landscape A4 PDF report in memory
 def convert_df_to_pdf(df, video_title, video_url):
     output = io.BytesIO()
@@ -1892,12 +2040,12 @@ if st.session_state.df is not None:
 
     # Download Button Section
     st.markdown(" ")
-    col_dl1, col_dl2 = st.columns(2)
+    col_dl1, col_dl2, col_dl3 = st.columns(3)
     with col_dl1:
         # Generate styled Excel file
         excel_data = convert_df_to_excel(st.session_state.df, st.session_state.video_title, st.session_state.video_url)
         st.download_button(
-            label=":material/download: Ekspor Laporan Excel Berwarna (.xlsx)",
+            label=":material/download: Ekspor Excel (.xlsx)",
             data=excel_data,
             file_name=f"semantika_hasil_{extract_video_id(st.session_state.video_url)}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1907,10 +2055,26 @@ if st.session_state.df is not None:
         # Generate landscape PDF report
         pdf_data = convert_df_to_pdf(st.session_state.df, st.session_state.video_title, st.session_state.video_url)
         st.download_button(
-            label=":material/download: Ekspor Laporan PDF (.pdf)",
+            label=":material/download: Ekspor PDF (.pdf)",
             data=pdf_data,
             file_name=f"semantika_hasil_{extract_video_id(st.session_state.video_url)}.pdf",
             mime="application/pdf",
+            use_container_width=True
+        )
+    with col_dl3:
+        # Generate dynamic PPTX presentation
+        pptx_data = convert_df_to_pptx(
+            st.session_state.df,
+            st.session_state.video_title,
+            st.session_state.video_url,
+            st.session_state.analysis_mode,
+            st.session_state.llm_model
+        )
+        st.download_button(
+            label=":material/download: Ekspor Presentasi (.pptx)",
+            data=pptx_data,
+            file_name=f"semantika_presentasi_{extract_video_id(st.session_state.video_url)}.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
             use_container_width=True
         )
 
