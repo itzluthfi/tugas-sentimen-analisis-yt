@@ -470,8 +470,14 @@ def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
     p.text = "• Proyek ini menerapkan studi komparatif antara dua metode analisis utama."
     p.level = 1
     p = tf.add_paragraph()
-    p.text = "• Lexicon-Based (Kamus): Bekerja mencocokkan kata per kata secara lokal untuk performa kecepatan tinggi."
+    p.text = "• Lexicon-Based (Kamus): Bekerja mencocokkan kata per kata secara lokal dengan dua kamus bahasa:"
     p.level = 1
+    p = tf.add_paragraph()
+    p.text = "  - Bahasa Indonesia: Kamus InSet (+ Sastrawi Stemmer & Slang)."
+    p.level = 2
+    p = tf.add_paragraph()
+    p.text = "  - Bahasa Inggris: Kamus VADER (Optimal untuk emoji & slang sosmed)."
+    p.level = 2
     p = tf.add_paragraph()
     p.text = "• LLM-Based (Kecerdasan Buatan): Memanfaatkan penalaran semantik model NVIDIA NIM untuk memahami makna kontekstual."
     p.level = 1
