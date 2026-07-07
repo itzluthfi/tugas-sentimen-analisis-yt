@@ -2203,7 +2203,17 @@ if st.session_state.df is not None:
     if len(df_eval) == 0:
         st.warning("Belum ada Ground Truth yang diisi. Silakan isi beberapa baris pada kolom Ground Truth di tabel atas untuk memunculkan evaluasi metrik akurasi.", icon=":material/warning:")
     else:
-        st.success(f"Menghitung performa berdasarkan **{len(df_eval)}** komentar yang telah dilabeli Ground Truth.", icon=":material/check_circle:")
+        # Pre-calculate counts for transparent banner information
+        y_true_temp = df_eval["Ground Truth"].str.strip().str.lower()
+        total_gt = len(df_eval)
+        total_eval_comments = y_true_temp.isin(["positif", "negatif"]).sum()
+        netral_gt = total_gt - total_eval_comments
+        
+        st.success(
+            f"Menghitung performa berdasarkan **{total_eval_comments}** komentar Positif/Negatif "
+            f"(dari total {total_gt} Ground Truth, {netral_gt} komentar Netral diabaikan sesuai aturan sistem poin).",
+            icon=":material/check_circle:"
+        )
         
         y_true = df_eval["Ground Truth"].str.strip().str.lower()
         y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
