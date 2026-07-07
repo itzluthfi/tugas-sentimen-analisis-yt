@@ -2204,14 +2204,10 @@ if st.session_state.df is not None:
         st.warning("Belum ada Ground Truth yang diisi. Silakan isi beberapa baris pada kolom Ground Truth di tabel atas untuk memunculkan evaluasi metrik akurasi.", icon=":material/warning:")
     else:
         # Pre-calculate counts for transparent banner information
-        y_true_temp = df_eval["Ground Truth"].str.strip().str.lower()
         total_gt = len(df_eval)
-        total_eval_comments = y_true_temp.isin(["positif", "negatif"]).sum()
-        netral_gt = total_gt - total_eval_comments
         
         st.success(
-            f"Menghitung performa berdasarkan **{total_eval_comments}** komentar Positif/Negatif "
-            f"(dari total {total_gt} Ground Truth, {netral_gt} komentar Netral diabaikan sesuai aturan sistem poin).",
+            f"Menghitung performa berdasarkan **{total_gt}** komentar yang telah dilabeli Ground Truth (Evaluasi seluruh kelas: Positif, Negatif, dan Netral).",
             icon=":material/check_circle:"
         )
         
@@ -2228,38 +2224,64 @@ if st.session_state.df is not None:
         llm_prec, llm_rec, llm_f1, _ = precision_recall_fscore_support(y_true, y_llm, average='macro', zero_division=0)
         kappa_llm = cohen_kappa_score(y_true, y_llm)
         
-        # Calculate SEMANTIKA Points System
-        # Rules:
-        # - If Ground Truth is "netral": point change is 0 (tidak terjadi apa-apa)
-        # - If Ground Truth is "positif" or "negatif":
-        #   - If Model == Ground Truth: +1 point
-        #   - If Model != Ground Truth: -1 point
+        # Calculate SEMANTIKA Points System (all 3 classes)
         lex_points = 0
         llm_points = 0
         lex_correct = 0
         llm_correct = 0
-        total_eval_comments = 0
+        
+        # Breakdown counters
+        lex_correct_pos = 0
+        lex_correct_neg = 0
+        lex_correct_net = 0
+        
+        llm_correct_pos = 0
+        llm_correct_neg = 0
+        llm_correct_net = 0
+        
+        total_pos = 0
+        total_neg = 0
+        total_net = 0
         
         for idx, row in df_eval.iterrows():
             gt = str(row["Ground Truth"]).strip().lower()
             lex = str(row["Lexicon Sentiment"]).strip().lower()
             llm = str(row["LLM Sentiment"]).strip().lower()
             
-            if gt in ["positif", "negatif"]:
-                total_eval_comments += 1
-                # Lexicon
-                if lex == gt:
-                    lex_points += 1
-                    lex_correct += 1
-                else:
-                    lex_points -= 1
+            if gt == "positif":
+                total_pos += 1
+            elif gt == "negatif":
+                total_neg += 1
+            elif gt == "netral":
+                total_net += 1
                 
-                # LLM
-                if llm == gt:
-                    llm_points += 1
-                    llm_correct += 1
-                else:
-                    llm_points -= 1
+            # Lexicon
+            if lex == gt:
+                lex_points += 1
+                lex_correct += 1
+                if gt == "positif":
+                    lex_correct_pos += 1
+                elif gt == "negatif":
+                    lex_correct_neg += 1
+                elif gt == "netral":
+                    lex_correct_net += 1
+            else:
+                lex_points -= 1
+                
+            # LLM
+            if llm == gt:
+                llm_points += 1
+                llm_correct += 1
+                if gt == "positif":
+                    llm_correct_pos += 1
+                elif gt == "negatif":
+                    llm_correct_neg += 1
+                elif gt == "netral":
+                    llm_correct_net += 1
+            else:
+                llm_points -= 1
+
+        total_eval_comments = len(df_eval)
 
         # Render Points Comparison UI Cards
         col_pts1, col_pts2 = st.columns(2)
@@ -2268,9 +2290,14 @@ if st.session_state.df is not None:
                 f"""
                 <div class="point-card lexicon-card">
                     <h3>POIN PERFORMA LEXICON</h3>
-                    <div style="font-size: 3rem; font-weight: 800; margin: 10px 0;">{lex_points}</div>
-                    <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 8px;">Benar: {lex_correct} / {total_eval_comments} Komentar</div>
-                    <p>Metode Sastrawi + InSet Lexicon</p>
+                    <div style="font-size: 3rem; font-weight: 800; margin: 5px 0;">{lex_points}</div>
+                    <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 5px;">Total Benar: {lex_correct} / {total_eval_comments} Komentar</div>
+                    <div style="font-size: 0.85rem; opacity: 0.8; line-height: 1.4; margin-bottom: 8px; text-align: left; padding-left: 20%;">
+                        • Positif: {lex_correct_pos} / {total_pos}<br/>
+                        • Negatif: {lex_correct_neg} / {total_neg}<br/>
+                        • Netral: {lex_correct_net} / {total_net}
+                    </div>
+                    <p style="margin-top: 5px; font-size: 0.8rem;">Metode Sastrawi + InSet Lexicon</p>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -2281,9 +2308,14 @@ if st.session_state.df is not None:
                 f"""
                 <div class="point-card llm-card">
                     <h3>POIN PERFORMA LLM</h3>
-                    <div style="font-size: 3rem; font-weight: 800; margin: 10px 0;">{llm_points}</div>
-                    <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 8px;">Benar: {llm_correct} / {total_eval_comments} Komentar</div>
-                    <p>NVIDIA NIM ({st.session_state.llm_model.split('/')[-1]})</p>
+                    <div style="font-size: 3rem; font-weight: 800; margin: 5px 0;">{llm_points}</div>
+                    <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 5px;">Total Benar: {llm_correct} / {total_eval_comments} Komentar</div>
+                    <div style="font-size: 0.85rem; opacity: 0.8; line-height: 1.4; margin-bottom: 8px; text-align: left; padding-left: 20%;">
+                        • Positif: {llm_correct_pos} / {total_pos}<br/>
+                        • Negatif: {llm_correct_neg} / {total_neg}<br/>
+                        • Netral: {llm_correct_net} / {total_net}
+                    </div>
+                    <p style="margin-top: 5px; font-size: 0.8rem;">NVIDIA NIM ({st.session_state.llm_model.split('/')[-1]})</p>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -2343,10 +2375,9 @@ if st.session_state.df is not None:
             <strong>Sistem Poin Komparasi SEMANTIKA:</strong><br/>
             Sistem poin di atas dihitung dengan ketentuan:
             <ul>
-                <li>Setiap data Ground Truth yang bernilai <strong>positif</strong> atau <strong>negatif</strong> akan dievaluasi.</li>
+                <li>Setiap data Ground Truth yang bernilai <strong>positif</strong>, <strong>negatif</strong>, atau <strong>netral</strong> akan dievaluasi.</li>
                 <li>Jika tebakan model <strong>Benar (sesuai Ground Truth)</strong> $\rightarrow$ Model mendapatkan <strong>+1 Poin</strong>.</li>
                 <li>Jika tebakan model <strong>Salah</strong> $\rightarrow$ Model dikurangi <strong>-1 Poin</strong>.</li>
-                <li>Jika Ground Truth bernilai <strong>netral</strong> $\rightarrow$ <strong>0 Poin (tidak terjadi apa-apa)</strong>.</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
