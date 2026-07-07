@@ -2278,6 +2278,49 @@ if st.session_state.df is not None:
                 """,
                 unsafe_allow_html=True
             )
+        # Render Points Donut Charts for Accuracy (Correct vs Incorrect)
+        fig_perf, (ax_p1, ax_p2) = plt.subplots(1, 2, figsize=(10, 4.5))
+        
+        # Colors: Green for Correct, Red for Incorrect
+        perf_colors = ["#2ecc71", "#e74c3c"]
+        
+        # Lexicon Donut
+        lex_incorrect = total_eval_comments - lex_correct
+        if total_eval_comments > 0:
+            lex_sizes = [lex_correct, lex_incorrect]
+            lex_labels = ["Benar", "Salah"]
+            lex_data = [(s, l) for s, l in zip(lex_sizes, lex_labels) if s > 0]
+            if lex_data:
+                sizes, labels = zip(*lex_data)
+                ax_p1.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+                centre_circle = plt.Circle((0,0), 0.50, fc='white')
+                ax_p1.add_artist(centre_circle)
+                ax_p1.set_title("Akurasi Lexicon (Benar vs Salah)", fontsize=11, weight="bold")
+            else:
+                ax_p1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+        else:
+            ax_p1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+            
+        # LLM Donut
+        llm_incorrect = total_eval_comments - llm_correct
+        if total_eval_comments > 0:
+            llm_sizes = [llm_correct, llm_incorrect]
+            llm_labels = ["Benar", "Salah"]
+            llm_data = [(s, l) for s, l in zip(llm_sizes, llm_labels) if s > 0]
+            if llm_data:
+                sizes, labels = zip(*llm_data)
+                ax_p2.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+                centre_circle = plt.Circle((0,0), 0.50, fc='white')
+                ax_p2.add_artist(centre_circle)
+                ax_p2.set_title("Akurasi LLM (Benar vs Salah)", fontsize=11, weight="bold")
+            else:
+                ax_p2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+        else:
+            ax_p2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+            
+        plt.tight_layout()
+        st.pyplot(fig_perf)
+        plt.close()
             
         # Point Rules Explanation
         st.markdown("""
