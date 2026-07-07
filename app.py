@@ -1228,22 +1228,9 @@ if menu_selection == "Analisis Video Tunggal":
                             if model_input == "deepseek-ai/deepseek-v4-pro":
                                 ds_sentiment_map = llm_sentiment_map
                             else:
-                                status.write("Langkah tambahan: Menghubungi DeepSeek V4 Pro untuk Ground Truth...")
-                                ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
-                                try:
-                                    for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
-                                        batch = comments[i:i+batch_size]
-                                        status.write(f"   - Mengirim DeepSeek V4 Pro Batch {batch_idx + 1}/{num_batches}...")
-                                        batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
-                                        for r in batch_results:
-                                            ds_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
-                                except Exception as e:
-                                    status.write("⚠️ Gagal menghubungi DeepSeek V4 Pro. Menggunakan fallback model utama...")
-                                    st.sidebar.warning(
-                                        f"Gagal memproses Ground Truth menggunakan DeepSeek V4 Pro ({e}). "
-                                        f"Sebagai cadangan, Ground Truth otomatis disalin dari prediksi model utama ({model_input})."
-                                    )
-                                    ds_sentiment_map = llm_sentiment_map
+                                # Jangan isi otomatis Ground Truth selama penarikan awal untuk menghemat API rate limit.
+                                # Pengisian Ground Truth akan dilakukan secara manual via panel Quick Labeling (Isi Otomatis).
+                                ds_sentiment_map = {}
                             
                             st.session_state.llm_time = time.time() - start_llm_time
                             
@@ -1256,7 +1243,7 @@ if menu_selection == "Analisis Video Tunggal":
                                 cid = c["comment_id"]
                                 gt = existing_gts.get(cid, "")
                                 if not gt or str(gt).strip() == "":
-                                    gt = ds_sentiment_map.get(cid, "netral")
+                                    gt = ds_sentiment_map.get(cid, "")
                                 final_data.append({
                                     "No": idx + 1,
                                     "Comment ID": cid,
@@ -2306,7 +2293,7 @@ if st.session_state.df is not None:
         # Tab Layout for Visualizations
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             ":material/pie_chart: Sebaran Sentimen (Donut Charts)", 
-            ":material/grid_on: Matrik Kebingungan (Confusion Matrices)",
+            ":material/equalizer: Performa Klasifikasi (Metrics)",
             ":material/bar_chart: Perbandingan Metrik (Bar Chart)",
             ":material/timeline: Tren Sentimen (Timeline)",
             ":material/short_text: Frekuensi Kata (Top Words)",
@@ -2377,9 +2364,9 @@ if st.session_state.df is not None:
             st.pyplot(fig_donut)
             plt.close()
  
-        # Tab 2: Confusion Matrices & Standard Metrics
+        # Tab 2: Performa Klasifikasi & Akurasi
         with tab2:
-            st.markdown("### Confusion Matrices & Performa Klasifikasi")
+            st.markdown("### Performa Klasifikasi & Akurasi")
             
             # Display metrics columns
             col_m1, col_m2 = st.columns(2)
@@ -2398,26 +2385,6 @@ if st.session_state.df is not None:
                 st.write(f"- **Recall (Sensitivitas)**: {llm_rec * 100:.2f}%")
                 st.write(f"- **F1-Score**: {llm_f1 * 100:.2f}%")
                 st.write(f"- **Cohen's Kappa**: `{kappa_llm:.4f}` ({interpret_kappa(kappa_llm)})")
-            
-            # Plot Confusion Matrices Side by Side
-            fig_cm, (ax_cm1, ax_cm2) = plt.subplots(1, 2, figsize=(15, 6))
-            labels_present = sorted(list(set(y_true.unique()) | set(y_lexicon.unique()) | set(y_llm.unique())))
-            
-            # Lexicon CM
-            cm_lex = confusion_matrix(y_true, y_lexicon, labels=labels_present)
-            disp_lex = ConfusionMatrixDisplay(confusion_matrix=cm_lex, display_labels=labels_present)
-            disp_lex.plot(ax=ax_cm1, cmap=plt.cm.Blues, values_format='d')
-            ax_cm1.set_title("Confusion Matrix: Lexicon-based", weight="bold")
-            
-            # LLM CM
-            cm_llm = confusion_matrix(y_true, y_llm, labels=labels_present)
-            disp_llm = ConfusionMatrixDisplay(confusion_matrix=cm_llm, display_labels=labels_present)
-            disp_llm.plot(ax=ax_cm2, cmap=plt.cm.Greens, values_format='d')
-            ax_cm2.set_title("Confusion Matrix: LLM-based", weight="bold")
-            
-            plt.tight_layout()
-            st.pyplot(fig_cm)
-            plt.close()
  
         # Tab 3: Metrics Comparison Bar Chart
         with tab3:
