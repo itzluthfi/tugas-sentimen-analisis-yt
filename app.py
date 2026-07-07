@@ -424,174 +424,289 @@ def convert_df_to_excel(df, video_title, video_url):
 # Helper to convert DataFrame to a PowerPoint presentation (.pptx) report in memory
 def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
     from pptx import Presentation
-    from pptx.util import Inches, Pt
+    from pptx.util import Inches, Pt, Emu
     from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+    from pptx.enum.shapes import MSO_SHAPE
     
     prs = Presentation()
-    slide_layout = prs.slide_layouts[1] # Title and Content
+    # Set 16:9 widescreen (13.333 x 7.5 inches)
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
     
-    # Helper to setup slide layout: Left column text, Right column image placeholder
-    def adjust_slide_layout(slide, title_text, img_placeholder_title=None):
-        title_shape = slide.shapes.title
-        title_shape.text = title_text
+    # --- Color Palette ---
+    CLR_PRIMARY  = RGBColor(30, 58, 138)   # Deep navy blue
+    CLR_ACCENT   = RGBColor(59, 130, 246)  # Bright blue accent
+    CLR_DARK     = RGBColor(30, 41, 59)    # Slate-900 for body text
+    CLR_SUBTITLE = RGBColor(71, 85, 105)   # Slate-600
+    CLR_LIGHT_BG = RGBColor(241, 245, 249) # Slate-100 (placeholder bg)
+    CLR_BORDER   = RGBColor(203, 213, 225) # Slate-300 (placeholder border)
+    CLR_PLACEHOLDER_TEXT = RGBColor(148, 163, 184) # Slate-400
+    CLR_WHITE    = RGBColor(255, 255, 255)
+    CLR_GREEN    = RGBColor(22, 163, 74)   # Green-600
+    CLR_ORANGE   = RGBColor(234, 88, 12)   # Orange-600
+    
+    FONT_TITLE  = "Segoe UI"
+    FONT_BODY   = "Segoe UI"
+    
+    # =============================================
+    # Helper: Add a styled text bullet to text frame
+    # =============================================
+    def add_bullet(tf, text, level=0, bold=False, font_size=14, color=None, space_after=8):
+        p = tf.add_paragraph()
+        p.text = text
+        p.level = level
+        p.space_after = Pt(space_after)
+        p.space_before = Pt(2)
+        run = p.runs[0] if p.runs else p.add_run()
+        run.font.name = FONT_BODY
+        run.font.size = Pt(font_size)
+        run.font.color.rgb = color or CLR_DARK
+        run.font.bold = bold
+        return p
+    
+    # =============================================
+    # Helper: Create a content slide with accent bar, title, and image placeholder
+    # =============================================
+    def make_content_slide(title_text, img_placeholder_label=None):
+        slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank layout
         
-        body_shape = slide.placeholders[1]
-        body_shape.left = Inches(0.5)
-        body_shape.top = Inches(1.5)
-        body_shape.width = Inches(5.0)
-        body_shape.height = Inches(5.0)
+        # White background
+        bg = slide.background
+        fill = bg.fill
+        fill.solid()
+        fill.fore_color.rgb = CLR_WHITE
         
-        if img_placeholder_title:
-            from pptx.enum.shapes import MSO_SHAPE
-            from pptx.dml.color import RGBColor
+        # Top accent bar (full width, 6px tall)
+        bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(13.333), Pt(6))
+        bar.fill.solid()
+        bar.fill.fore_color.rgb = CLR_ACCENT
+        bar.line.fill.background()
+        
+        # Left accent strip (vertical, 4px wide)
+        vbar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.6), Inches(0.35), Pt(5), Inches(0.55))
+        vbar.fill.solid()
+        vbar.fill.fore_color.rgb = CLR_ACCENT
+        vbar.line.fill.background()
+        
+        # Title text box
+        txBox = slide.shapes.add_textbox(Inches(0.9), Inches(0.3), Inches(7.5), Inches(0.65))
+        tf_title = txBox.text_frame
+        tf_title.word_wrap = True
+        p = tf_title.paragraphs[0]
+        p.text = title_text
+        run = p.runs[0] if p.runs else p.add_run()
+        run.font.name = FONT_TITLE
+        run.font.size = Pt(26)
+        run.font.color.rgb = CLR_PRIMARY
+        run.font.bold = True
+        
+        # Separator line below title
+        sep = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.6), Inches(1.05), Inches(5.5), Pt(2))
+        sep.fill.solid()
+        sep.fill.fore_color.rgb = CLR_ACCENT
+        sep.line.fill.background()
+        
+        # Content text box (left column)
+        txBox2 = slide.shapes.add_textbox(Inches(0.7), Inches(1.35), Inches(6.2), Inches(5.6))
+        tf = txBox2.text_frame
+        tf.word_wrap = True
+        # Clear default paragraph
+        tf.paragraphs[0].text = ""
+        
+        # Image placeholder (right column) — rounded rectangle
+        if img_placeholder_label:
+            ph_left = Inches(7.4)
+            ph_top = Inches(1.35)
+            ph_width = Inches(5.3)
+            ph_height = Inches(5.6)
             
-            left = Inches(5.8)
-            top = Inches(1.5)
-            width = Inches(3.8)
-            height = Inches(5.0)
-            
-            shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+            shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, ph_left, ph_top, ph_width, ph_height)
             shape.fill.solid()
-            shape.fill.fore_color.rgb = RGBColor(248, 250, 252) # light grey background
-            shape.line.color.rgb = RGBColor(203, 213, 225) # slate border
+            shape.fill.fore_color.rgb = CLR_LIGHT_BG
+            shape.line.color.rgb = CLR_BORDER
             shape.line.width = Pt(1.5)
+            shape.line.dash_style = 2  # Dashed
             
-            tf = shape.text_frame
-            tf.text = f"\n\n\n\n[ Tempatkan {img_placeholder_title} di Sini ]"
-            p = tf.paragraphs[0]
-            p.alignment = 1 # Center
-            p.font.name = "Arial"
-            p.font.size = Pt(11)
-            p.font.color.rgb = RGBColor(148, 163, 184)
-            p.font.bold = True
-        return body_shape.text_frame
+            # Placeholder label text
+            ph_tf = shape.text_frame
+            ph_tf.word_wrap = True
+            ph_tf.paragraphs[0].alignment = PP_ALIGN.CENTER
+            ph_p = ph_tf.paragraphs[0]
+            ph_p.space_before = Pt(100)
+            ph_run = ph_p.add_run()
+            ph_run.text = f"📷\n{img_placeholder_label}"
+            ph_run.font.name = FONT_BODY
+            ph_run.font.size = Pt(12)
+            ph_run.font.color.rgb = CLR_PLACEHOLDER_TEXT
+            ph_run.font.bold = True
         
-    # slide 1: Title Slide (using layout 0)
-    title_slide_layout = prs.slide_layouts[0]
-    slide = prs.slides.add_slide(title_slide_layout)
-    title = slide.shapes.title
-    subtitle = slide.placeholders[1]
-    title.text = "SEMANTIKA"
-    subtitle.text = f"Laporan Analisis Sentimen Komentar YouTube\n\nVideo: {video_title}\nMode: {analysis_mode}\nModel LLM: {llm_model}"
+        # Slide number at bottom-right
+        num_box = slide.shapes.add_textbox(Inches(12.2), Inches(7.0), Inches(0.8), Inches(0.35))
+        num_tf = num_box.text_frame
+        num_p = num_tf.paragraphs[0]
+        num_p.alignment = PP_ALIGN.RIGHT
+        num_run = num_p.add_run()
+        num_run.text = str(len(prs.slides))
+        num_run.font.name = FONT_BODY
+        num_run.font.size = Pt(10)
+        num_run.font.color.rgb = CLR_SUBTITLE
+        
+        return tf
     
-    # slide 2: Model Analisis: Lexicon vs LLM
-    slide = prs.slides.add_slide(slide_layout)
-    tf = adjust_slide_layout(slide, "Model Analisis: Lexicon vs LLM", "Tabel Perbandingan Komentar")
-    tf.text = "Pendekatan Analisis Sentimen Hibrida:"
-    p = tf.add_paragraph()
-    p.text = "• Proyek ini menerapkan studi komparatif antara dua metode analisis utama."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Lexicon-Based (Kamus): Bekerja mencocokkan kata per kata secara lokal dengan dua kamus bahasa:"
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "  - Bahasa Indonesia: Kamus InSet (+ Sastrawi Stemmer & Slang)."
-    p.level = 2
-    p = tf.add_paragraph()
-    p.text = "  - Bahasa Inggris: Kamus VADER (Optimal untuk emoji & slang sosmed)."
-    p.level = 2
-    p = tf.add_paragraph()
-    p.text = "• LLM-Based (Kecerdasan Buatan): Memanfaatkan penalaran semantik model NVIDIA NIM untuk memahami makna kontekstual."
-    p.level = 1
-
-    # slide 3: Cara Kerja Stemming & Lexicon Indonesia
-    slide = prs.slides.add_slide(slide_layout)
-    tf = adjust_slide_layout(slide, "Cara Kerja: Lexicon Bahasa Indonesia", "Diagram/Hasil Lexicon Indonesia")
-    tf.text = "Alur Pemrosesan Teks Indonesia:"
-    p = tf.add_paragraph()
-    p.text = "• Detektor bahasa memisahkan komentar berbahasa Indonesia secara otomatis."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Kamus InSet (Indonesian Sentiment Lexicon) berisi nilai sentimen positif & negatif kata."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Stemmer Sastrawi & Kamus Slang kustom mengubah kata gaul (contoh: 'yg' -> 'yang') dan berimbuhan menjadi kata dasar agar cocok dengan kamus."
-    p.level = 1
-
-    # slide 4: Kamus Lexicon Inggris - VADER
-    slide = prs.slides.add_slide(slide_layout)
-    tf = adjust_slide_layout(slide, "Cara Kerja: Lexicon Bahasa Inggris", "Grafik Sebaran Sentimen Inggris")
-    tf.text = "Alur Pemrosesan Teks Inggris:"
-    p = tf.add_paragraph()
-    p.text = "• Komentar berbahasa Inggris dideteksi dan diproses oleh VADER Lexicon secara instan."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• VADER dioptimalkan khusus untuk bahasa media sosial."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Mampu memproses emoji (😊), penekanan tanda baca (!!), huruf kapital (ANGRY), dan slang bahasa Inggris tanpa perlu stemming."
-    p.level = 1
-
-    # slide 5: Pemilihan Model LLM & Ground Truth
-    slide = prs.slides.add_slide(slide_layout)
-    tf = adjust_slide_layout(slide, "Model LLM & Ground Truth Engine", "Grafik Performa Akurasi")
-    tf.text = "Distribusi Peran Model AI:"
-    p = tf.add_paragraph()
-    p.text = "• Model Utama (e.g. Llama 3.1 8B): Menganalisis ratusan komentar secara cepat dalam batch."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Model Ground Truth (DeepSeek V4 Pro): Sebagai label acuan performansi akurasi dengan reasoning logis."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Sistem dilengkapi mekanisme auto-fallback dinamis ke model flash/utama jika API NVIDIA mengalami kendala kuota."
-    p.level = 1
-
-    # slide 6: Cara Kerja Analisis - Mode Konteks Global
-    slide = prs.slides.add_slide(slide_layout)
-    tf = adjust_slide_layout(slide, "Cara Kerja: Mode Konteks Global", "Grafik Distribusi Global")
-    tf.text = "Evaluasi Sentimen Umum:"
-    p = tf.add_paragraph()
-    p.text = "• Model mengevaluasi emosi komentar secara mandiri (standalone)."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Penilaian hanya berdasarkan kalimat yang tertulis, tanpa melihat isi video."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Cocok untuk analisis umum yang tidak memerlukan pemahaman konten video latar belakang."
-    p.level = 1
-
-    # slide 7: Cara Kerja Analisis - Mode Konteks ke Video
-    slide = prs.slides.add_slide(slide_layout)
-    tf = adjust_slide_layout(slide, "Cara Kerja: Mode Konteks ke Video", "Screenshot Transkrip / Metadata")
-    tf.text = "Evaluasi Sentimen Konten:"
-    p = tf.add_paragraph()
-    p.text = "• Sistem mengekstrak Judul, Deskripsi, Tags, dan Transkrip Subtitel video YouTube (via youtube-transcript-api)."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Model LLM membandingkan teks komentar dengan isi konten video tersebut."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Komentar yang melenceng atau spam (out-of-context) otomatis diklasifikasikan sebagai Netral."
-    p.level = 1
-
-    # slide 8: Ringkasan Analisis Video Ini
-    slide = prs.slides.add_slide(slide_layout)
-    tf = adjust_slide_layout(slide, "Ringkasan Analisis Video Ini", "Screenshot Dashboard Utama")
-    tf.text = "Statistik Analisis Aktif:"
-    p = tf.add_paragraph()
-    p.text = f"• Judul Video: {video_title}"
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = f"• URL Video: {video_url}"
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = f"• Total Komentar Teranalisis: {len(df)} komentar"
-    p.level = 1
+    # ====================================================
+    # SLIDE 1 — Title Slide (Custom full-bleed design)
+    # ====================================================
+    slide1 = prs.slides.add_slide(prs.slide_layouts[6])  # Blank
+    # Dark gradient-like background
+    bg1 = slide1.background
+    fill1 = bg1.fill
+    fill1.solid()
+    fill1.fore_color.rgb = CLR_PRIMARY
+    
+    # Big brand accent block at left
+    accent_block = slide1.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(0.6), Inches(7.5))
+    accent_block.fill.solid()
+    accent_block.fill.fore_color.rgb = CLR_ACCENT
+    accent_block.line.fill.background()
+    
+    # Title
+    t1 = slide1.shapes.add_textbox(Inches(1.2), Inches(1.5), Inches(10), Inches(1.5))
+    tf1 = t1.text_frame
+    p1 = tf1.paragraphs[0]
+    r1 = p1.add_run()
+    r1.text = "SEMANTIKA"
+    r1.font.name = FONT_TITLE
+    r1.font.size = Pt(52)
+    r1.font.color.rgb = CLR_WHITE
+    r1.font.bold = True
+    
+    # Subtitle
+    t2 = slide1.shapes.add_textbox(Inches(1.2), Inches(3.0), Inches(10), Inches(0.8))
+    tf2 = t2.text_frame
+    p2 = tf2.paragraphs[0]
+    r2 = p2.add_run()
+    r2.text = "Laporan Analisis Sentimen Komentar YouTube"
+    r2.font.name = FONT_BODY
+    r2.font.size = Pt(24)
+    r2.font.color.rgb = RGBColor(191, 219, 254)  # Blue-200
+    
+    # Metadata lines
+    meta_lines = [
+        f"Video  :  {video_title}",
+        f"Mode   :  {analysis_mode}",
+        f"Model  :  {llm_model}",
+    ]
+    t3 = slide1.shapes.add_textbox(Inches(1.2), Inches(4.3), Inches(10), Inches(2.5))
+    tf3 = t3.text_frame
+    tf3.word_wrap = True
+    for i, line in enumerate(meta_lines):
+        if i == 0:
+            p = tf3.paragraphs[0]
+        else:
+            p = tf3.add_paragraph()
+        p.space_after = Pt(8)
+        r = p.add_run()
+        r.text = line
+        r.font.name = FONT_BODY
+        r.font.size = Pt(16)
+        r.font.color.rgb = RGBColor(148, 163, 184)  # Slate-400
+    
+    # ====================================================
+    # SLIDE 2 — Pendekatan Hibrida: Lexicon vs LLM
+    # ====================================================
+    tf = make_content_slide("Pendekatan Analisis: Lexicon vs LLM", "Tabel Perbandingan\nHasil Komentar")
+    add_bullet(tf, "Studi komparatif dua metode analisis sentimen:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Lexicon-Based  →  Mencocokkan kata per kata dengan kamus sentimen lokal", font_size=13, space_after=6)
+    add_bullet(tf, "LLM-Based  →  Model AI NVIDIA NIM memahami makna kontekstual kalimat", font_size=13, space_after=14)
+    add_bullet(tf, "Keunggulan Pendekatan Hibrida:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Lexicon cepat & transparan, LLM menangkap nuansa bahasa kompleks", font_size=13, space_after=6)
+    add_bullet(tf, "Perbandingan hasil keduanya memberikan validasi silang", font_size=13)
+    
+    # ====================================================
+    # SLIDE 3 — Lexicon Bahasa Indonesia (Stemming + InSet)
+    # ====================================================
+    tf = make_content_slide("Lexicon Bahasa Indonesia", "Diagram / Screenshot\nHasil Lexicon Indonesia")
+    add_bullet(tf, "Alur Pemrosesan:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Deteksi otomatis bahasa Indonesia pada setiap komentar", font_size=13, space_after=8)
+    add_bullet(tf, "Normalisasi slang  →  'gk' menjadi 'tidak', 'yg' menjadi 'yang'", font_size=13, space_after=8)
+    add_bullet(tf, "Stemming Sastrawi  →  mengubah kata berimbuhan ke bentuk dasar", font_size=13, space_after=14)
+    add_bullet(tf, "Kamus InSet (Indonesian Sentiment Lexicon):", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Berisi ribuan kata dengan skor sentimen positif & negatif", font_size=13, space_after=6)
+    add_bullet(tf, "Skor dijumlahkan per kalimat → klasifikasi akhir sentimen", font_size=13)
+    
+    # ====================================================
+    # SLIDE 4 — Lexicon Bahasa Inggris (VADER)
+    # ====================================================
+    tf = make_content_slide("Lexicon Bahasa Inggris — VADER", "Grafik Sebaran\nSentimen Inggris")
+    add_bullet(tf, "VADER (Valence Aware Dictionary & Sentiment Reasoner):", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Dioptimalkan khusus untuk bahasa media sosial", font_size=13, space_after=8)
+    add_bullet(tf, "Memahami emoji  (😊 😡),  huruf kapital  (AMAZING!),  dan tanda baca  (!!!)", font_size=13, space_after=8)
+    add_bullet(tf, "Tidak memerlukan stemming — bekerja langsung pada teks mentah", font_size=13, space_after=14)
+    add_bullet(tf, "Proses Klasifikasi:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Menghasilkan compound score (-1 s/d +1)", font_size=13, space_after=6)
+    add_bullet(tf, "Threshold: ≥ 0.05 Positif, ≤ -0.05 Negatif, sisanya Netral", font_size=13)
+    
+    # ====================================================
+    # SLIDE 5 — Model LLM & Ground Truth
+    # ====================================================
+    tf = make_content_slide("Model LLM & Ground Truth", "Grafik Performa\nAkurasi Model")
+    add_bullet(tf, "Distribusi Peran Model AI:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Model Utama (Llama 3.1 8B)  →  Analisis cepat ratusan komentar", font_size=13, space_after=8)
+    add_bullet(tf, "Model Ground Truth (DeepSeek V4 Pro)  →  Label acuan berkualitas tinggi", font_size=13, space_after=14)
+    add_bullet(tf, "Mekanisme Ketahanan:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Auto-fallback ke model cadangan saat API limit (Error 429)", font_size=13, space_after=6)
+    add_bullet(tf, "Exponential backoff & retry otomatis untuk stabilitas", font_size=13)
+    
+    # ====================================================
+    # SLIDE 6 — Mode Konteks Global
+    # ====================================================
+    tf = make_content_slide("Mode Analisis: Konteks Global", "Grafik Distribusi\nSentimen Global")
+    add_bullet(tf, "Cara Kerja:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Setiap komentar dievaluasi secara mandiri (standalone)", font_size=13, space_after=8)
+    add_bullet(tf, "Penilaian hanya berdasarkan teks yang tertulis", font_size=13, space_after=8)
+    add_bullet(tf, "Tidak mempertimbangkan isi/konten video", font_size=13, space_after=14)
+    add_bullet(tf, "Cocok Untuk:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Analisis umum opini publik tanpa konteks spesifik", font_size=13, space_after=6)
+    add_bullet(tf, "Perbandingan sentimen antar video yang berbeda topik", font_size=13)
+    
+    # ====================================================
+    # SLIDE 7 — Mode Konteks ke Video
+    # ====================================================
+    tf = make_content_slide("Mode Analisis: Konteks ke Video", "Screenshot Metadata\n& Transkrip Video")
+    add_bullet(tf, "Data Konteks yang Diekstrak:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Judul, Deskripsi, Tags, dan Transkrip Subtitel video", font_size=13, space_after=8)
+    add_bullet(tf, "Diambil via YouTube Data API + youtube-transcript-api", font_size=13, space_after=14)
+    add_bullet(tf, "Cara Kerja:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Model LLM membandingkan komentar dengan konten video", font_size=13, space_after=6)
+    add_bullet(tf, "Komentar spam / tidak relevan → otomatis diklasifikasi Netral", font_size=13, space_after=6)
+    add_bullet(tf, "Menghasilkan analisis sentimen yang lebih akurat & kontekstual", font_size=13)
+    
+    # ====================================================
+    # SLIDE 8 — Ringkasan Dataset Video Aktif
+    # ====================================================
+    tf = make_content_slide("Ringkasan Dataset Video", "Screenshot\nDashboard Utama")
+    add_bullet(tf, "Informasi Video:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, f"Judul:  {video_title}", font_size=13, space_after=8)
+    add_bullet(tf, f"URL:  {video_url}", font_size=13, space_after=8)
+    add_bullet(tf, f"Total Komentar:  {len(df)} komentar", font_size=13, space_after=14)
     
     lang_info = "Indonesia"
     if "Language" in df.columns:
         lang_counts = df["Language"].value_counts()
-        lang_details = []
+        lang_parts = []
         for lang, count in lang_counts.items():
             pct = (count / len(df) * 100) if len(df) > 0 else 0
-            name = "Indonesia (ID)" if str(lang).strip().lower() == "id" else ("Inggris (EN)" if str(lang).strip().lower() == "en" else str(lang).upper())
-            lang_details.append(f"{name} {pct:.1f}%")
-        lang_info = " & ".join(lang_details)
-    p = tf.add_paragraph()
-    p.text = f"• Bahasa Terdeteksi: {lang_info}"
-    p.level = 1
-
-    # slide 9: Hasil Sentimen & Akurasi Video Ini
+            name = "Indonesia" if str(lang).strip().lower() == "id" else ("Inggris" if str(lang).strip().lower() == "en" else str(lang).upper())
+            lang_parts.append(f"{name} ({pct:.1f}%)")
+        lang_info = ",  ".join(lang_parts)
+    add_bullet(tf, "Statistik Bahasa:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, f"Komposisi:  {lang_info}", font_size=13, space_after=6)
+    add_bullet(tf, f"Mode Analisis:  {analysis_mode}", font_size=13)
+    
+    # ====================================================
+    # SLIDE 9 — Hasil Sentimen & Akurasi
+    # ====================================================
     lex_pos = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "positif"])
     lex_neg = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "negatif"])
     lex_net = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "netral"])
@@ -602,15 +717,11 @@ def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
     df_eval = df.dropna(subset=["Ground Truth"]).copy()
     df_eval = df_eval[df_eval["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
     
-    slide = prs.slides.add_slide(slide_layout)
-    tf = adjust_slide_layout(slide, "Hasil Sentimen & Akurasi", "Pie/Bar Chart Hasil Sentimen")
-    tf.text = "Hasil Sebaran Klasifikasi:"
-    p = tf.add_paragraph()
-    p.text = f"• Lexicon: Positif ({lex_pos}) | Negatif ({lex_neg}) | Netral ({lex_net})"
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = f"• LLM ({llm_model}): Positif ({llm_pos}) | Negatif ({llm_neg}) | Netral ({llm_net})"
-    p.level = 1
+    tf = make_content_slide("Hasil Sentimen & Akurasi", "Pie / Bar Chart\nHasil Sentimen")
+    add_bullet(tf, "Distribusi Sentimen Lexicon:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, f"Positif: {lex_pos}   |   Negatif: {lex_neg}   |   Netral: {lex_net}", font_size=13, space_after=14)
+    add_bullet(tf, f"Distribusi Sentimen LLM ({llm_model.split('/')[-1]}):", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, f"Positif: {llm_pos}   |   Negatif: {llm_neg}   |   Netral: {llm_net}", font_size=13, space_after=14)
     
     if len(df_eval) > 0:
         y_true = df_eval["Ground Truth"].str.strip().str.lower()
@@ -618,27 +729,22 @@ def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
         y_llm = df_eval["LLM Sentiment"].str.strip().str.lower()
         lex_acc = accuracy_score(y_true, y_lexicon) if len(y_true) > 0 else 0
         llm_acc = accuracy_score(y_true, y_llm) if len(y_true) > 0 else 0
-        p = tf.add_paragraph()
-        p.text = f"• Akurasi Lexicon: {lex_acc*100:.1f}% | Akurasi LLM: {llm_acc*100:.1f}%"
-        p.level = 1
+        add_bullet(tf, "Tingkat Akurasi (vs Ground Truth):", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+        add_bullet(tf, f"Lexicon: {lex_acc*100:.1f}%   |   LLM: {llm_acc*100:.1f}%", font_size=13, color=CLR_GREEN)
     else:
-        p = tf.add_paragraph()
-        p.text = "• (Evaluasi Akurasi Terkunci: Ground Truth belum diisi)"
-        p.level = 1
-
-    # slide 10: Kesimpulan & Temuan Utama
-    slide = prs.slides.add_slide(slide_layout)
-    tf = adjust_slide_layout(slide, "Kesimpulan & Temuan Utama", "Bagan Kesimpulan / Rekomendasi")
-    tf.text = "Poin-Poin Kesimpulan:"
-    p = tf.add_paragraph()
-    p.text = "• Pendekatan Hibrida (Lexicon + LLM) sukses melengkapi kekurangan masing-masing metode secara efisien."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Mode Konteks Video secara signifikan memotong data bising (spam/out-of-context) sehingga akurasi sentimen lebih presisi."
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = "• Anotasi Ground Truth otomatis berbasis DeepSeek V4 Pro memberikan justifikasi logis yang sangat membantu dalam pengawasan kualitas data."
-    p.level = 1
+        add_bullet(tf, "⚠ Evaluasi akurasi belum tersedia (Ground Truth belum diisi)", font_size=13, color=CLR_ORANGE)
+    
+    # ====================================================
+    # SLIDE 10 — Kesimpulan & Temuan Utama
+    # ====================================================
+    tf = make_content_slide("Kesimpulan & Temuan Utama", "Bagan Kesimpulan\n/ Rekomendasi")
+    add_bullet(tf, "Temuan Utama:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Pendekatan Hibrida (Lexicon + LLM) saling melengkapi kekurangan masing-masing metode", font_size=13, space_after=8)
+    add_bullet(tf, "Mode Konteks Video memotong noise (spam/off-topic) sehingga akurasi lebih tinggi", font_size=13, space_after=8)
+    add_bullet(tf, "Ground Truth via DeepSeek V4 Pro memberikan label acuan berkualitas tinggi", font_size=13, space_after=14)
+    add_bullet(tf, "Rekomendasi:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Gunakan Mode Konteks Video untuk hasil yang lebih akurat & relevan", font_size=13, space_after=6)
+    add_bullet(tf, "Validasi manual Ground Truth untuk memastikan kualitas evaluasi performa", font_size=13)
     
     # Save presentation to memory stream
     binary_output = io.BytesIO()
