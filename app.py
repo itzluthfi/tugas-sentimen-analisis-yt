@@ -1583,9 +1583,10 @@ if st.session_state.df is not None:
             with btn_col1:
                 if st.button("Isi Otomatis", use_container_width=True, help="Mengisi Ground Truth kosong dengan hasil prediksi DeepSeek V4 Pro"):
                     if fillable_count > 0:
-                        with st.spinner("Mengisi Ground Truth menggunakan DeepSeek V4 Pro..."):
+                        with st.status("Mengisi Ground Truth menggunakan DeepSeek V4 Pro...", expanded=True) as status:
                             # Check if active model is already deepseek-v4-pro
                             if st.session_state.llm_model == "deepseek-ai/deepseek-v4-pro":
+                                status.write("Menyalin hasil analisis dari model LLM aktif...")
                                 st.session_state.df.loc[empty_gt_mask, "Ground Truth"] = st.session_state.df.loc[empty_gt_mask, "LLM Sentiment"]
                             else:
                                 # Fetch on the fly
@@ -1599,33 +1600,44 @@ if st.session_state.df is not None:
                                 
                                 video_context = None
                                 if st.session_state.analysis_mode == "Konteks ke Video" and st.session_state.video_url:
+                                    status.write("Mengambil teks isi dan metadata video (konteks)...")
                                     video_context = get_video_context(st.session_state.video_url)
                                 
+                                status.write(f"Menganalisis {len(comments_to_analyze)} komentar dengan DeepSeek V4 Pro...")
                                 ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
                                 ds_results = []
                                 batch_size = 20
+                                num_batches = (len(comments_to_analyze) - 1) // batch_size + 1
+                                
                                 for i in range(0, len(comments_to_analyze), batch_size):
+                                    batch_idx = i // batch_size
                                     batch = comments_to_analyze[i:i+batch_size]
+                                    status.write(f"   - Memproses Batch {batch_idx + 1}/{num_batches}...")
                                     batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
                                     ds_results.extend(batch_results)
                                 
+                                status.write("Memetakan hasil prediksi ke tabel...")
                                 for r in ds_results:
                                     cid = r["comment_id"]
                                     sentiment = r["llm_sentiment"]
                                     st.session_state.df.loc[st.session_state.df["Comment ID"] == cid, "Ground Truth"] = sentiment
 
-                        st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
-                        
-                        # Sync dengan riwayat lokal & GSheets
-                        video_id = extract_video_id(st.session_state.video_url)
-                        if video_id:
-                            safe_title = make_safe_filename(st.session_state.video_title)
-                            history_filename = f"[{video_id}] {safe_title}.csv"
-                            history_path = os.path.join(HISTORY_DIR, history_filename)
-                            st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
-                            if APP_MODE == "production":
-                                sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
-                        
+                            status.write("Menyimpan hasil ke disk lokal...")
+                            st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+                            
+                            # Sync dengan riwayat lokal & GSheets
+                            video_id = extract_video_id(st.session_state.video_url)
+                            if video_id:
+                                safe_title = make_safe_filename(st.session_state.video_title)
+                                history_filename = f"[{video_id}] {safe_title}.csv"
+                                history_path = os.path.join(HISTORY_DIR, history_filename)
+                                st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
+                                if APP_MODE == "production":
+                                    status.write("Menyinkronkan data dengan Google Sheets Cloud...")
+                                    sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
+                            
+                            status.update(label="Selesai mengisi Ground Truth!", state="complete", expanded=False)
+                            
                         st.success(f"Berhasil mengisi {fillable_count} komentar!")
                         st.rerun()
                     else:
