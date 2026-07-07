@@ -1697,6 +1697,10 @@ if menu_selection == "Analisis Perbandingan Global":
                 clean_name = h_key
                 match = re.match(r"^\[(.*?)\] (.*)$", clean_name)
                 vid_title = match.group(2) if match else clean_name
+                # Ensure necessary columns exist
+                for col in ["Ground Truth", "Lexicon Sentiment", "LLM Sentiment", "LLM Model", "Analysis Mode"]:
+                    if col not in df_temp.columns:
+                        df_temp[col] = None
                 
                 df_temp["Video Title"] = vid_title
                 dfs.append(df_temp)
@@ -1713,7 +1717,7 @@ if menu_selection == "Analisis Perbandingan Global":
                     llm_acc_temp = accuracy_score(y_true_temp, y_llm_temp)
                     
                     model_temp = "meta/llama-3.1-8b-instruct"
-                    if "LLM Model" in df_temp.columns:
+                    if "LLM Model" in df_temp.columns and df_temp["LLM Model"].iloc[0] is not None:
                         model_temp = df_temp["LLM Model"].iloc[0]
                     model_short = model_temp.split("/")[-1] if "/" in model_temp else model_temp
                     
@@ -1724,7 +1728,7 @@ if menu_selection == "Analisis Perbandingan Global":
                         "LLM Model": model_short
                     })
             except Exception as e:
-                st.error(f"Gagal membaca {h_file}: {e}")
+                st.error(f"Gagal membaca {h_key}: {e}")
                 
         if dfs:
             df_global = pd.concat(dfs, ignore_index=True)
