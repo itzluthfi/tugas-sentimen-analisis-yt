@@ -204,6 +204,8 @@ if "llm_time" not in st.session_state:
     st.session_state.llm_time = None
 if "analysis_mode" not in st.session_state:
     st.session_state.analysis_mode = "Konteks Global"
+if "video_context" not in st.session_state:
+    st.session_state.video_context = None
 
 # Auto-load existing results if CSV exists
 if st.session_state.df is None and os.path.exists(OUTPUT_FILE):
@@ -1090,6 +1092,7 @@ if menu_selection == "Analisis Video Tunggal":
                     else:
                         st.session_state.analysis_mode = "Konteks Global"
                         
+                    st.session_state.video_context = None
                     st.session_state.lexicon_time = None
                     st.session_state.llm_time = None
                     st.sidebar.success("Riwayat berhasil dimuat!")
@@ -1138,6 +1141,7 @@ if menu_selection == "Analisis Video Tunggal":
                         st.session_state.df = df_loaded
                         st.session_state.video_title = video_title
                         st.session_state.video_url = url_input
+                        st.session_state.video_context = None
                         st.session_state.lexicon_time = None
                         st.session_state.llm_time = None
                         st.rerun()
@@ -1282,6 +1286,7 @@ if menu_selection == "Analisis Video Tunggal":
                             st.session_state.df = df
                             st.session_state.video_title = video_title
                             st.session_state.video_url = url_input
+                            st.session_state.video_context = video_context
                             st.session_state.llm_model = model_input
                             st.session_state.detected_lang = detected_lang
                             
@@ -1875,6 +1880,25 @@ if st.session_state.df is not None:
         st.markdown(f":material/settings: **Mode Analisis:** `{st.session_state.analysis_mode}`")
     
     st.markdown("---")
+    
+    if st.session_state.analysis_mode == "Konteks ke Video":
+        # Check if video_context in session_state, else try to fetch
+        if "video_context" not in st.session_state or st.session_state.video_context is None:
+            if st.session_state.video_url:
+                try:
+                    with st.spinner("Mengambil transkrip/konteks video dari YouTube..."):
+                        st.session_state.video_context = get_video_context(st.session_state.video_url)
+                except Exception:
+                    st.session_state.video_context = "Gagal mengambil transkrip/konteks video."
+            else:
+                st.session_state.video_context = "Teks transkrip/konteks video tidak tersedia untuk riwayat ini."
+
+        with st.expander(":material/movie: Lihat Metadata & Transkrip Subtitel Video (Konteks)", expanded=False):
+            st.markdown("Informasi berikut diekstraksi secara otomatis dari YouTube untuk mencocokkan emosi dan relevansi komentar:")
+            if st.session_state.video_context:
+                st.text_area("Konteks Video (Title, Description, Transcript):", value=st.session_state.video_context, height=250, disabled=True)
+            else:
+                st.info("Konteks video tidak tersedia.")
     
     # Hitung statistik kesepakatan model untuk fitur pengisian cepat
     df_temp = st.session_state.df
