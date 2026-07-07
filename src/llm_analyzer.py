@@ -17,7 +17,9 @@ class LLMSentimentAnalyzer:
     def _call_nvidia_api(self, messages: list) -> str:
         """
         Makes a POST request to the NVIDIA NIM API with the given messages payload.
+        Includes automatic retry with exponential backoff on rate limit (429) and server errors.
         """
+        import time
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
@@ -35,17 +37,33 @@ class LLMSentimentAnalyzer:
             "stream": False
         }
         
-        response = requests.post(self.url, json=payload, headers=headers)
-        if response.status_code != 200:
-            raise RuntimeError(f"NVIDIA NIM API Error {response.status_code}: {response.text}")
-            
-        response_json = response.json()
+        max_retries = 5
+        backoff_factor = 2.0  # seconds
         
-        # Extract content from response
-        choices = response_json.get("choices", [])
-        if choices:
-            return choices[0].get("message", {}).get("content", "").strip()
-        return ""
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(self.url, json=payload, headers=headers, timeout=15)
+                
+                if response.status_code == 200:
+                    response_json = response.json()
+                    choices = response_json.get("choices", [])
+                    if choices:
+                        return choices[0].get("message", {}).get("content", "").strip()
+                    return ""
+                
+                elif response.status_code in [429, 500, 502, 503, 504]:
+                    wait_time = backoff_factor * (2 ** attempt)
+                    logger.warning(f"Kesalahan API ({response.status_code}). Menunggu {wait_time:.1f} detik sebelum mencoba kembali (Percobaan {attempt + 1}/{max_retries})...")
+                    time.sleep(wait_time)
+                else:
+                    raise RuntimeError(f"NVIDIA NIM API Error {response.status_code}: {response.text}")
+            except requests.exceptions.RequestException as e:
+                # Handle network timeout/issues
+                wait_time = backoff_factor * (2 ** attempt)
+                logger.warning(f"Koneksi error ({e}). Menunggu {wait_time:.1f} detik sebelum mencoba kembali (Percobaan {attempt + 1}/{max_retries})...")
+                time.sleep(wait_time)
+                
+        raise RuntimeError(f"Gagal menghubungi NVIDIA NIM API setelah {max_retries} kali percobaan.")
 
     def analyze_batch(self, comments: list[dict], video_context: str = None) -> list[dict]:
         """
@@ -220,6 +238,7 @@ class LLMSentimentAnalyzer:
         """
         Fallback method that analyzes comments one by one.
         """
+        import time
         results = []
         for c in comments:
             sentiment, reason = self.analyze_single(c["text"], video_context)
@@ -228,6 +247,7 @@ class LLMSentimentAnalyzer:
                 "llm_sentiment": sentiment,
                 "llm_reason": reason
             })
+            time.sleep(0.5)
         return results
 
 if __name__ == "__main__":

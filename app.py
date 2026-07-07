@@ -924,13 +924,18 @@ if menu_selection == "Analisis Video Tunggal":
                             llm_reason_map = {}
                             num_batches = (len(comments) - 1) // batch_size + 1
                             
-                            for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
-                                batch = comments[i:i+batch_size]
-                                status.write(f"   - Mengirim LLM Batch {batch_idx + 1}/{num_batches}...")
-                                batch_results = llm_analyzer.analyze_batch(batch, video_context=video_context)
-                                for r in batch_results:
-                                    llm_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
-                                    llm_reason_map[r["comment_id"]] = r.get("llm_reason", "")
+                            try:
+                                for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
+                                    batch = comments[i:i+batch_size]
+                                    status.write(f"   - Mengirim LLM Batch {batch_idx + 1}/{num_batches}...")
+                                    batch_results = llm_analyzer.analyze_batch(batch, video_context=video_context)
+                                    for r in batch_results:
+                                        llm_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
+                                        llm_reason_map[r["comment_id"]] = r.get("llm_reason", "")
+                            except Exception as e:
+                                status.update(label="Gagal menghubungi API LLM!", state="error", expanded=True)
+                                st.error(f"Terjadi kesalahan saat menghubungi API NVIDIA NIM: {e}. Silakan periksa koneksi internet Anda atau coba beberapa saat lagi (Server API mungkin sedang mengalami kendala/rate limit).")
+                                st.stop()
                             
                             # Obtain DeepSeek V4 Pro sentiments for Ground Truth
                             ds_sentiment_map = {}
@@ -939,12 +944,17 @@ if menu_selection == "Analisis Video Tunggal":
                             else:
                                 status.write("Langkah tambahan: Menghubungi DeepSeek V4 Pro untuk Ground Truth...")
                                 ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
-                                for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
-                                    batch = comments[i:i+batch_size]
-                                    status.write(f"   - Mengirim DeepSeek V4 Pro Batch {batch_idx + 1}/{num_batches}...")
-                                    batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
-                                    for r in batch_results:
-                                        ds_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
+                                try:
+                                    for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
+                                        batch = comments[i:i+batch_size]
+                                        status.write(f"   - Mengirim DeepSeek V4 Pro Batch {batch_idx + 1}/{num_batches}...")
+                                        batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
+                                        for r in batch_results:
+                                            ds_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
+                                except Exception as e:
+                                    status.update(label="Gagal memproses Ground Truth (DeepSeek V4 Pro)!", state="error", expanded=True)
+                                    st.error(f"Gagal memproses Ground Truth menggunakan DeepSeek V4 Pro: {e}. Server API DeepSeek mungkin sedang padat atau mencapai batas pemakaian.")
+                                    st.stop()
                             
                             st.session_state.llm_time = time.time() - start_llm_time
                             
@@ -1630,17 +1640,22 @@ if st.session_state.df is not None:
                                     video_context = get_video_context(st.session_state.video_url)
                                 
                                 status.write(f"Menganalisis {len(comments_to_analyze)} komentar dengan DeepSeek V4 Pro...")
-                                ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
-                                ds_results = []
-                                batch_size = 20
-                                num_batches = (len(comments_to_analyze) - 1) // batch_size + 1
-                                
-                                for i in range(0, len(comments_to_analyze), batch_size):
-                                    batch_idx = i // batch_size
-                                    batch = comments_to_analyze[i:i+batch_size]
-                                    status.write(f"   - Memproses Batch {batch_idx + 1}/{num_batches}...")
-                                    batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
-                                    ds_results.extend(batch_results)
+                                try:
+                                    ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
+                                    ds_results = []
+                                    batch_size = 20
+                                    num_batches = (len(comments_to_analyze) - 1) // batch_size + 1
+                                    
+                                    for i in range(0, len(comments_to_analyze), batch_size):
+                                        batch_idx = i // batch_size
+                                        batch = comments_to_analyze[i:i+batch_size]
+                                        status.write(f"   - Memproses Batch {batch_idx + 1}/{num_batches}...")
+                                        batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
+                                        ds_results.extend(batch_results)
+                                except Exception as e:
+                                    status.update(label="Gagal memproses Ground Truth (DeepSeek V4 Pro)!", state="error", expanded=True)
+                                    st.error(f"Gagal memproses pengisian otomatis: {e}. Server API DeepSeek mungkin sedang padat atau mencapai batas pemakaian.")
+                                    st.stop()
                                 
                                 status.write("Memetakan hasil prediksi ke tabel...")
                                 for r in ds_results:
