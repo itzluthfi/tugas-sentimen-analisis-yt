@@ -416,38 +416,150 @@ def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
     from pptx.dml.color import RGBColor
     
     prs = Presentation()
+    slide_layout = prs.slide_layouts[1] # Title and Content
     
+    # Helper to setup slide layout: Left column text, Right column image placeholder
+    def adjust_slide_layout(slide, title_text, img_placeholder_title=None):
+        title_shape = slide.shapes.title
+        title_shape.text = title_text
+        
+        body_shape = slide.placeholders[1]
+        body_shape.left = Inches(0.5)
+        body_shape.top = Inches(1.5)
+        body_shape.width = Inches(5.0)
+        body_shape.height = Inches(5.0)
+        
+        if img_placeholder_title:
+            from pptx.enum.shapes import MSO_SHAPE
+            from pptx.dml.color import RGBColor
+            
+            left = Inches(5.8)
+            top = Inches(1.5)
+            width = Inches(3.8)
+            height = Inches(5.0)
+            
+            shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = RGBColor(248, 250, 252) # light grey background
+            shape.line.color.rgb = RGBColor(203, 213, 225) # slate border
+            shape.line.width = Pt(1.5)
+            
+            tf = shape.text_frame
+            tf.text = f"\n\n\n\n[ Tempatkan {img_placeholder_title} di Sini ]"
+            p = tf.paragraphs[0]
+            p.alignment = 1 # Center
+            p.font.name = "Arial"
+            p.font.size = Pt(11)
+            p.font.color.rgb = RGBColor(148, 163, 184)
+            p.font.bold = True
+        return body_shape.text_frame
+        
     # slide 1: Title Slide (using layout 0)
     title_slide_layout = prs.slide_layouts[0]
     slide = prs.slides.add_slide(title_slide_layout)
     title = slide.shapes.title
     subtitle = slide.placeholders[1]
-    
     title.text = "SEMANTIKA"
     subtitle.text = f"Laporan Analisis Sentimen Komentar YouTube\n\nVideo: {video_title}\nMode: {analysis_mode}\nModel LLM: {llm_model}"
     
-    # slide 2: Ringkasan Dataset (using layout 1 - Title and Content)
-    slide_layout = prs.slide_layouts[1]
+    # slide 2: Model Analisis: Lexicon vs LLM
     slide = prs.slides.add_slide(slide_layout)
-    title_shape = slide.shapes.title
-    title_shape.text = "Ringkasan Analisis Dataset"
-    
-    tf = slide.placeholders[1].text_frame
-    tf.text = "Detail Analisis Video:"
-    
+    tf = adjust_slide_layout(slide, "Model Analisis: Lexicon vs LLM", "Tabel Perbandingan Komentar")
+    tf.text = "Pendekatan Analisis Sentimen Hibrida:"
+    p = tf.add_paragraph()
+    p.text = "• Proyek ini menerapkan studi komparatif antara dua metode analisis utama."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Lexicon-Based (Kamus): Bekerja mencocokkan kata per kata secara lokal untuk performa kecepatan tinggi."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• LLM-Based (Kecerdasan Buatan): Memanfaatkan penalaran semantik model NVIDIA NIM untuk memahami makna kontekstual."
+    p.level = 1
+
+    # slide 3: Cara Kerja Stemming & Lexicon Indonesia
+    slide = prs.slides.add_slide(slide_layout)
+    tf = adjust_slide_layout(slide, "Cara Kerja: Lexicon Bahasa Indonesia", "Diagram/Hasil Lexicon Indonesia")
+    tf.text = "Alur Pemrosesan Teks Indonesia:"
+    p = tf.add_paragraph()
+    p.text = "• Detektor bahasa memisahkan komentar berbahasa Indonesia secara otomatis."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Kamus InSet (Indonesian Sentiment Lexicon) berisi nilai sentimen positif & negatif kata."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Stemmer Sastrawi & Kamus Slang kustom mengubah kata gaul (contoh: 'yg' -> 'yang') dan berimbuhan menjadi kata dasar agar cocok dengan kamus."
+    p.level = 1
+
+    # slide 4: Kamus Lexicon Inggris - VADER
+    slide = prs.slides.add_slide(slide_layout)
+    tf = adjust_slide_layout(slide, "Cara Kerja: Lexicon Bahasa Inggris", "Grafik Sebaran Sentimen Inggris")
+    tf.text = "Alur Pemrosesan Teks Inggris:"
+    p = tf.add_paragraph()
+    p.text = "• Komentar berbahasa Inggris dideteksi dan diproses oleh VADER Lexicon secara instan."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• VADER dioptimalkan khusus untuk bahasa media sosial."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Mampu memproses emoji (😊), penekanan tanda baca (!!), huruf kapital (ANGRY), dan slang bahasa Inggris tanpa perlu stemming."
+    p.level = 1
+
+    # slide 5: Pemilihan Model LLM & Ground Truth
+    slide = prs.slides.add_slide(slide_layout)
+    tf = adjust_slide_layout(slide, "Model LLM & Ground Truth Engine", "Grafik Performa Akurasi")
+    tf.text = "Distribusi Peran Model AI:"
+    p = tf.add_paragraph()
+    p.text = "• Model Utama (e.g. Llama 3.1 8B): Menganalisis ratusan komentar secara cepat dalam batch."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Model Ground Truth (DeepSeek V4 Pro): Sebagai label acuan performansi akurasi dengan reasoning logis."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Sistem dilengkapi mekanisme auto-fallback dinamis ke model flash/utama jika API NVIDIA mengalami kendala kuota."
+    p.level = 1
+
+    # slide 6: Cara Kerja Analisis - Mode Konteks Global
+    slide = prs.slides.add_slide(slide_layout)
+    tf = adjust_slide_layout(slide, "Cara Kerja: Mode Konteks Global", "Grafik Distribusi Global")
+    tf.text = "Evaluasi Sentimen Umum:"
+    p = tf.add_paragraph()
+    p.text = "• Model mengevaluasi emosi komentar secara mandiri (standalone)."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Penilaian hanya berdasarkan kalimat yang tertulis, tanpa melihat isi video."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Cocok untuk analisis umum yang tidak memerlukan pemahaman konten video latar belakang."
+    p.level = 1
+
+    # slide 7: Cara Kerja Analisis - Mode Konteks ke Video
+    slide = prs.slides.add_slide(slide_layout)
+    tf = adjust_slide_layout(slide, "Cara Kerja: Mode Konteks ke Video", "Screenshot Transkrip / Metadata")
+    tf.text = "Evaluasi Sentimen Konten:"
+    p = tf.add_paragraph()
+    p.text = "• Sistem mengekstrak Judul, Deskripsi, Tags, dan Transkrip Subtitel video YouTube (via youtube-transcript-api)."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Model LLM membandingkan teks komentar dengan isi konten video tersebut."
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = "• Komentar yang melenceng atau spam (out-of-context) otomatis diklasifikasikan sebagai Netral."
+    p.level = 1
+
+    # slide 8: Ringkasan Analisis Video Ini
+    slide = prs.slides.add_slide(slide_layout)
+    tf = adjust_slide_layout(slide, "Ringkasan Analisis Video Ini", "Screenshot Dashboard Utama")
+    tf.text = "Statistik Analisis Aktif:"
     p = tf.add_paragraph()
     p.text = f"• Judul Video: {video_title}"
     p.level = 1
-    
     p = tf.add_paragraph()
     p.text = f"• URL Video: {video_url}"
     p.level = 1
-    
     p = tf.add_paragraph()
     p.text = f"• Total Komentar Teranalisis: {len(df)} komentar"
     p.level = 1
     
-    # Language distribution
     lang_info = "Indonesia"
     if "Language" in df.columns:
         lang_counts = df["Language"].value_counts()
@@ -457,98 +569,57 @@ def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
             name = "Indonesia (ID)" if str(lang).strip().lower() == "id" else ("Inggris (EN)" if str(lang).strip().lower() == "en" else str(lang).upper())
             lang_details.append(f"{name} {pct:.1f}%")
         lang_info = " & ".join(lang_details)
-        
     p = tf.add_paragraph()
     p.text = f"• Bahasa Terdeteksi: {lang_info}"
     p.level = 1
-    
-    # slide 3: Distribusi Sentimen
-    slide = prs.slides.add_slide(slide_layout)
-    title_shape = slide.shapes.title
-    title_shape.text = "Hasil Distribusi Sentimen"
-    
-    tf = slide.placeholders[1].text_frame
-    tf.text = "Perbandingan Hasil Klasifikasi Sentimen:"
-    
+
+    # slide 9: Hasil Sentimen & Akurasi Video Ini
     lex_pos = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "positif"])
     lex_neg = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "negatif"])
     lex_net = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "netral"])
-    
     llm_pos = len(df[df["LLM Sentiment"].str.lower().str.strip() == "positif"])
     llm_neg = len(df[df["LLM Sentiment"].str.lower().str.strip() == "negatif"])
     llm_net = len(df[df["LLM Sentiment"].str.lower().str.strip() == "netral"])
     
-    p = tf.add_paragraph()
-    p.text = f"• Lexicon-Based Sentimen:"
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = f"  - Positif: {lex_pos} | Negatif: {lex_neg} | Netral: {lex_net}"
-    p.level = 2
-    
-    p = tf.add_paragraph()
-    p.text = f"• LLM-Based Sentimen ({llm_model}):"
-    p.level = 1
-    p = tf.add_paragraph()
-    p.text = f"  - Positif: {llm_pos} | Negatif: {llm_neg} | Netral: {llm_net}"
-    p.level = 2
-    
-    # slide 4: Evaluasi Akurasi (jika ada Ground Truth)
     df_eval = df.dropna(subset=["Ground Truth"]).copy()
     df_eval = df_eval[df_eval["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
     
     slide = prs.slides.add_slide(slide_layout)
-    title_shape = slide.shapes.title
-    title_shape.text = "Evaluasi Performa & Akurasi"
+    tf = adjust_slide_layout(slide, "Hasil Sentimen & Akurasi", "Pie/Bar Chart Hasil Sentimen")
+    tf.text = "Hasil Sebaran Klasifikasi:"
+    p = tf.add_paragraph()
+    p.text = f"• Lexicon: Positif ({lex_pos}) | Negatif ({lex_neg}) | Netral ({lex_net})"
+    p.level = 1
+    p = tf.add_paragraph()
+    p.text = f"• LLM ({llm_model}): Positif ({llm_pos}) | Negatif ({llm_neg}) | Netral ({llm_net})"
+    p.level = 1
     
-    tf = slide.placeholders[1].text_frame
     if len(df_eval) > 0:
-        tf.text = f"Berdasarkan {len(df_eval)} data Ground Truth yang diverifikasi:"
-        
         y_true = df_eval["Ground Truth"].str.strip().str.lower()
         y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
         y_llm = df_eval["LLM Sentiment"].str.strip().str.lower()
-        
         lex_acc = accuracy_score(y_true, y_lexicon) if len(y_true) > 0 else 0
         llm_acc = accuracy_score(y_true, y_llm) if len(y_true) > 0 else 0
-        
-        agree_mask = df["Lexicon Sentiment"] == df["LLM Sentiment"]
-        pct_agreement = (agree_mask.sum() / len(df) * 100) if len(df) > 0 else 0
-        
         p = tf.add_paragraph()
-        p.text = f"• Akurasi Lexicon-Based terhadap Ground Truth: {lex_acc*100:.1f}%"
-        p.level = 1
-        
-        p = tf.add_paragraph()
-        p.text = f"• Akurasi LLM-Based terhadap Ground Truth: {llm_acc*100:.1f}%"
-        p.level = 1
-        
-        p = tf.add_paragraph()
-        p.text = f"• Tingkat Kesepakatan Model (Agreement Rate): {pct_agreement:.1f}%"
+        p.text = f"• Akurasi Lexicon: {lex_acc*100:.1f}% | Akurasi LLM: {llm_acc*100:.1f}%"
         p.level = 1
     else:
-        tf.text = "Belum ada data evaluasi Ground Truth."
         p = tf.add_paragraph()
-        p.text = "• Isilah kolom Ground Truth pada tabel untuk mengaktifkan metrik evaluasi performa akurasi pada slide ini."
+        p.text = "• (Evaluasi Akurasi Terkunci: Ground Truth belum diisi)"
         p.level = 1
-        
-    # slide 5: Kesimpulan Laporan
+
+    # slide 10: Kesimpulan & Temuan Utama
     slide = prs.slides.add_slide(slide_layout)
-    title_shape = slide.shapes.title
-    title_shape.text = "Kesimpulan Laporan"
-    
-    tf = slide.placeholders[1].text_frame
-    tf.text = "Temuan Utama Proyek:"
-    
+    tf = adjust_slide_layout(slide, "Kesimpulan & Temuan Utama", "Bagan Kesimpulan / Rekomendasi")
+    tf.text = "Poin-Poin Kesimpulan:"
     p = tf.add_paragraph()
-    p.text = "• Metode LLM-based memberikan pemahaman kontekstual yang lebih mendalam dibandingkan metode pencocokan kata Lexicon."
+    p.text = "• Pendekatan Hibrida (Lexicon + LLM) sukses melengkapi kekurangan masing-masing metode secara efisien."
     p.level = 1
-    
     p = tf.add_paragraph()
-    p.text = "• Mode analisis kontekstual menyaring kebisingan komentar (out-of-context) secara efektif."
+    p.text = "• Mode Konteks Video secara signifikan memotong data bising (spam/out-of-context) sehingga akurasi sentimen lebih presisi."
     p.level = 1
-    
     p = tf.add_paragraph()
-    p.text = "• Integrasi Google Sheets dan database lokal memudahkan backup dan pengarsipan data secara dinamis."
+    p.text = "• Anotasi Ground Truth otomatis berbasis DeepSeek V4 Pro memberikan justifikasi logis yang sangat membantu dalam pengawasan kualitas data."
     p.level = 1
     
     # Save presentation to memory stream
