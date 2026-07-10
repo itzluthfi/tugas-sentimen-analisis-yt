@@ -1008,9 +1008,12 @@ def sync_video_to_gsheets(video_id, video_title, video_url, df_video):
         
     df_all = load_all_gsheets_data()
     
-    # Hapus baris yang memiliki Video ID yang sama agar tidak duplikat
+    # Hapus baris yang memiliki Video ID dan Mode Analisis yang sama agar tidak duplikat
     if not df_all.empty:
-        df_all = df_all[df_all["Video ID"] != video_id]
+        analysis_mode = st.session_state.analysis_mode
+        if "Analysis Mode" in df_video.columns and len(df_video) > 0:
+            analysis_mode = df_video["Analysis Mode"].iloc[0]
+        df_all = df_all[~((df_all["Video ID"] == video_id) & (df_all["Analysis Mode"] == analysis_mode))]
         
     new_rows = []
     for _, row in df_video.iterrows():
@@ -1220,7 +1223,7 @@ if menu_selection == "Analisis Video Tunggal":
                     match = re.match(r"^\[([a-zA-Z0-9_-]+)\]\s*(.*)\.csv$", selected_file)
                     if match:
                         video_id = match.group(1)
-                        video_title = match.group(2)
+                        video_title = re.sub(r"^\[(?:Konteks Global|Konteks ke Video)\]\s*", "", match.group(2)).strip()
                     else:
                         video_id = "unknown"
                         video_title = selected_file.replace(".csv", "")
@@ -1267,7 +1270,7 @@ if menu_selection == "Analisis Video Tunggal":
             else:
                 video_title = get_video_title(url_input)
                 safe_title = make_safe_filename(video_title)
-                history_filename = f"[{video_id}] {safe_title}.csv"
+                history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
                 history_path = os.path.join(HISTORY_DIR, history_filename)
     
                 if not force_refresh and os.path.exists(history_path):
@@ -1316,7 +1319,7 @@ if menu_selection == "Analisis Video Tunggal":
                         status.write("Langkah 1/5: Mengambil informasi video YouTube...")
                         video_title = get_video_title(url_input)
                         safe_title = make_safe_filename(video_title)
-                        history_filename = f"[{video_id}] {safe_title}.csv"
+                        history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
                         history_path = os.path.join(HISTORY_DIR, history_filename)
                         
                         video_context = None
@@ -1494,7 +1497,7 @@ if menu_selection == "Analisis Video Tunggal":
                 match = re.match(r"^\[(.*?)\] (.*)$", filename_clean)
                 if match:
                     vid_id = match.group(1)
-                    vid_title = match.group(2)
+                    vid_title = re.sub(r"^\[(?:Konteks Global|Konteks ke Video)\]\s*", "", match.group(2)).strip()
                     new_url = f"https://www.youtube.com/watch?v={vid_id}"
                 else:
                     new_url = YOUTUBE_VIDEO_URL
@@ -2153,7 +2156,7 @@ if st.session_state.df is not None:
                             video_id = extract_video_id(st.session_state.video_url)
                             if video_id:
                                 safe_title = make_safe_filename(st.session_state.video_title)
-                                history_filename = f"[{video_id}] {safe_title}.csv"
+                                history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
                                 history_path = os.path.join(HISTORY_DIR, history_filename)
                                 st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
                                 if APP_MODE == "production":
@@ -2175,7 +2178,7 @@ if st.session_state.df is not None:
                     video_id = extract_video_id(st.session_state.video_url)
                     if video_id:
                         safe_title = make_safe_filename(st.session_state.video_title)
-                        history_filename = f"[{video_id}] {safe_title}.csv"
+                        history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
                         history_path = os.path.join(HISTORY_DIR, history_filename)
                         st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
                         if APP_MODE == "production":
@@ -2286,7 +2289,7 @@ if st.session_state.df is not None:
         video_id = extract_video_id(st.session_state.video_url)
         if video_id:
             safe_title = make_safe_filename(st.session_state.video_title)
-            history_filename = f"[{video_id}] {safe_title}.csv"
+            history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
             history_path = os.path.join(HISTORY_DIR, history_filename)
             st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
             
