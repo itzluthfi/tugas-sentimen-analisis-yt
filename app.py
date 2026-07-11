@@ -672,7 +672,12 @@ def render_mode_tab_content(mode_key, llm_col_sentiment, llm_col_reason, mode_ti
                                         if fallback_model == "deepseek-ai/deepseek-v4-pro":
                                             fallback_model = "deepseek-ai/deepseek-v4-flash"
                                         fallback_analyzer = LLMSentimentAnalyzer(model=fallback_model)
-                                        batch_results = fallback_analyzer.analyze_batch(batch, video_context=video_context)
+                                        try:
+                                            batch_results = fallback_analyzer.analyze_batch(batch, video_context=video_context)
+                                        except Exception as e_final:
+                                            status.update(label="Gagal!", state="error", expanded=True)
+                                            st.error(f"Gagal melakukan Quick Labeling: API NVIDIA NIM tidak merespon ({e_final}). Silakan periksa kunci API Anda atau coba beberapa saat lagi.")
+                                            return
                                     ds_results.extend(batch_results)
                                 
                                 for r in ds_results:
