@@ -638,7 +638,15 @@ def render_mode_tab_content(mode_key, llm_col_sentiment, llm_col_reason, mode_ti
                                     batch = comments_to_analyze[batch_idx:batch_idx+batch_size]
                                     status.write(f"   - Memproses Batch {batch_idx//batch_size + 1}/{num_batches}...")
                                     video_context = get_video_context(st.session_state.video_url) if mode_key == "video" else None
-                                    batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
+                                    try:
+                                        batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
+                                    except Exception as e_fallback:
+                                        status.write(f"     ⚠️ DeepSeek V4 Pro gagal ({e_fallback}). Menggunakan model fallback...")
+                                        fallback_model = st.session_state.llm_model
+                                        if fallback_model == "deepseek-ai/deepseek-v4-pro":
+                                            fallback_model = "deepseek-ai/deepseek-v4-flash"
+                                        fallback_analyzer = LLMSentimentAnalyzer(model=fallback_model)
+                                        batch_results = fallback_analyzer.analyze_batch(batch, video_context=video_context)
                                     ds_results.extend(batch_results)
                                 
                                 for r in ds_results:
