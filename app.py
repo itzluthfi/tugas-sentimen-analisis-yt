@@ -611,135 +611,8 @@ def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
         r.font.name = FONT_BODY
         r.font.size = Pt(16)
         r.font.color.rgb = RGBColor(148, 163, 184)  # Slate-400
-    
-    # ====================================================
-    # SLIDE 2 — Pendekatan Hibrida: Lexicon vs LLM
-    # ====================================================
-    tf = make_content_slide("Pendekatan Analisis: Lexicon vs LLM", "Tabel Perbandingan\nHasil Komentar")
-    add_bullet(tf, "Kita coba bandingkan 2 metode analisis sekaligus:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, "Lexicon-Based  →  Deteksi instan pakai kamus kata (InSet & VADER)", font_size=13, space_after=8)
-    add_bullet(tf, "LLM-Based  →  Model AI NVIDIA NIM buat pahami konteks kalimat", font_size=13, space_after=14)
-    add_bullet(tf, "Kenapa digabung?", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, "Kamus itu super kencang, tapi LLM pinter baca sarkasme & slang gaul", font_size=13, space_after=8)
-    add_bullet(tf, "Bandingan keduanya bikin kita dapet kesimpulan yang objektif", font_size=13)
-    
-    # ====================================================
-    # SLIDE 3 — Lexicon Bahasa Indonesia (Stemming + InSet)
-    # ====================================================
-    tf = make_content_slide("Lexicon Bahasa Indonesia", "Diagram / Screenshot\nHasil Lexicon Indonesia")
-    add_bullet(tf, "Cara sistem olah komentar bahasa Indonesia:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, "Pemisahan komentar bahasa Indonesia dilakukan otomatis", font_size=13, space_after=8)
-    add_bullet(tf, "Slang dibersihkan dulu (contoh: 'yg' -> 'yang', 'gk' -> 'tidak')", font_size=13, space_after=8)
-    add_bullet(tf, "Kata berimbuhan diubah ke kata dasar pakai Stemmer Sastrawi", font_size=13, space_after=14)
-    add_bullet(tf, "Pencocokan Kamus InSet:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, "Tiap kata dicocokkan ke kamus buat dicari skor positif/negatifnya", font_size=13, space_after=8)
-    add_bullet(tf, "Skor akhir dijumlahkan buat tentuin sentimen komentarnya", font_size=13)
 
-    # ====================================================
-    # SLIDE 4 — Fitur Kustom: Pengelolaan Kamus Slang
-    # ====================================================
-    tf = make_content_slide("Pengelolaan Kamus Slang Kustom", "Tabel Kamus Slang\ndi Dashboard")
-    add_bullet(tf, "Sistem punya editor Kamus Slang kustom di sidebar:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, "Bisa tambah, edit, atau hapus padanan kata gaul sesuai kebutuhan", font_size=13, space_after=8)
-    add_bullet(tf, "Membantu menaikkan akurasi Lexicon secara drastis dari waktu ke waktu", font_size=13, space_after=14)
-    add_bullet(tf, "Kelebihan Fitur Ini:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, "Sangat fleksibel untuk bahasa kekinian atau singkatan khas komunitas", font_size=13, space_after=8)
-    add_bullet(tf, "Perubahan langsung tersimpan dan aktif pada analisis berikutnya", font_size=13)
-    
-    # ====================================================
-    # SLIDE 5 — Lexicon Bahasa Inggris (VADER)
-    # ====================================================
-    tf = make_content_slide("Lexicon Bahasa Inggris — VADER", "Grafik Sebaran\nSentimen Inggris")
-    add_bullet(tf, "Gimana dengan komentar bahasa Inggris?", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, "Kita pakai VADER Lexicon yang emang pas buat bahasa media sosial", font_size=13, space_after=8)
-    add_bullet(tf, "Hebatnya, nggak perlu stemming buat nemu kata dasar", font_size=13, space_after=8)
-    add_bullet(tf, "Pinter baca emoji (😊), tulisan caps lock (ANGRY), dan tanda seru (!!!)", font_size=13, space_after=14)
-    add_bullet(tf, "Aturan Klasifikasi:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, "Menghasilkan compound score dari rentang -1 sampai +1", font_size=13, space_after=8)
-    add_bullet(tf, "Batas sentimen: ≥ 0.05 Positif, ≤ -0.05 Negatif, sisanya Netral", font_size=13)
-    
-    # ====================================================
-    # SLIDE 6 — Model LLM & Ground Truth
-    # ====================================================
-    tf = make_content_slide("Model LLM & Ground Truth", "Grafik Performa\nAkurasi Model")
-    add_bullet(tf, "Dua jenis model AI di belakang layar:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, "Model Utama (Llama 3.1 8B)  →  Buat analisis cepat ratusan komentar", font_size=13, space_after=8)
-    add_bullet(tf, "DeepSeek V4 Pro  →  Dipakai buat otomatisasi isi Ground Truth", font_size=13, space_after=14)
-    add_bullet(tf, "Biar demo lancar dan aman dari error:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, "Ada auto-fallback ke model cadangan kalau API limit (Error 429)", font_size=13, space_after=8)
-    add_bullet(tf, "Dilengkapi auto-retry bertahap biar proses nggak macet di tengah", font_size=13)
-    
-    # ====================================================
-    # SLIDE 7 — Mode Konteks Global
-    # ====================================================
-    tf = make_content_slide("Mode Analisis: Konteks Global", "Grafik Distribusi\nSentimen Global")
-    add_bullet(tf, "Melihat respon secara umum:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, "Evaluasi sentimen dilakukan mandiri per komentar (standalone)", font_size=13, space_after=8)
-    add_bullet(tf, "Penilaian murni dari kalimat yang tertulis saja", font_size=13, space_after=8)
-    add_bullet(tf, "Tidak mempertimbangkan isi atau topik video sama sekali", font_size=13, space_after=14)
-    add_bullet(tf, "Kapan kita pakai mode ini?", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, "Pas mau tahu reaksi umum penonton tanpa butuh info isi video", font_size=13, space_after=8)
-    add_bullet(tf, "Bagus buat membandingkan sentimen antar video secara global", font_size=13)
-    
-    # ====================================================
-    # SLIDE 8 — Mode Konteks ke Video
-    # ====================================================
-    tf = make_content_slide("Mode Analisis: Konteks ke Video", "Screenshot Metadata\n& Transkrip Video")
-    add_bullet(tf, "Gimana cara sistem memahami isi video?", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, "Ekstrak otomatis: judul, deskripsi, tags, dan transkrip subtitel", font_size=13, space_after=8)
-    add_bullet(tf, "Proses penarikan data pakai youtube-transcript-api secara instan", font_size=13, space_after=14)
-    add_bullet(tf, "Efek ke hasil analisis:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, "Model LLM bandingkan makna komentar langsung dengan isi video", font_size=13, space_after=8)
-    add_bullet(tf, "Komentar spam atau out-of-context otomatis digeser ke Netral", font_size=13, space_after=8)
-    add_bullet(tf, "Sentimen yang didapat jauh lebih presisi & sesuai konteks video", font_size=13)
-
-    # ====================================================
-    # SLIDE 9 — Pemodelan Topik (Topic Modeling)
-    # ====================================================
-    tf = make_content_slide("Pemodelan Topik (Topic Modeling)", "Pembagian Topik\ndi Tab Visualisasi")
-    add_bullet(tf, "Kita nggak cuma cari emosi, tapi juga tema obrolan netizen:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, "Menggunakan algoritma pembobotan kata TF-IDF", font_size=13, space_after=8)
-    add_bullet(tf, "Pengelompokan otomatis komentar pakai klusterisasi K-Means", font_size=13, space_after=14)
-    add_bullet(tf, "Manfaat Analitik Ini:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, "Secara otomatis membagi komentar ke dalam 3 topik utama", font_size=13, space_after=8)
-    add_bullet(tf, "Bantu kita tahu apa saja sub-topik yang paling banyak didebatkan", font_size=13)
-
-    # ====================================================
-    # SLIDE 10 — Analisis Perbandingan Global
-    # ====================================================
-    tf = make_content_slide("Analisis Perbandingan Global", "Grafik Perbandingan\nAntar Video")
-    add_bullet(tf, "Bisa bandingkan banyak video sekaligus secara akumulatif:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, "Menggabungkan riwayat riil lokal maupun data dari cloud (GSheets)", font_size=13, space_after=8)
-    add_bullet(tf, "Menampilkan grafik akurasi jangka panjang untuk melihat model terbaik", font_size=13, space_after=14)
-    add_bullet(tf, "Fleksibilitas Filter:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, "Tersedia filter perbandingan khusus berdasarkan mode analisis", font_size=13, space_after=8)
-    add_bullet(tf, "Bisa memilih / men-toggle video mana saja yang ingin disertakan", font_size=13)
-    
-    # ====================================================
-    # SLIDE 11 — Ringkasan Dataset Video Aktif
-    # ====================================================
-    tf = make_content_slide("Ringkasan Dataset Video", "Screenshot\nDashboard Utama")
-    add_bullet(tf, "Ini data video yang sedang kita demo-kan:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
-    add_bullet(tf, f"Judul Video:  {video_title}", font_size=13, space_after=8)
-    add_bullet(tf, f"URL Video:  {video_url}", font_size=13, space_after=8)
-    add_bullet(tf, f"Total Komentar Terkumpul:  {len(df)} komentar", font_size=13, space_after=14)
-    
-    lang_info = "Indonesia"
-    if "Language" in df.columns:
-        lang_counts = df["Language"].value_counts()
-        lang_parts = []
-        for lang, count in lang_counts.items():
-            pct = (count / len(df) * 100) if len(df) > 0 else 0
-            name = "Indonesia" if str(lang).strip().lower() == "id" else ("Inggris" if str(lang).strip().lower() == "en" else str(lang).upper())
-            lang_parts.append(f"{name} ({pct:.1f}%)")
-        lang_info = ",  ".join(lang_parts)
-    add_bullet(tf, "Informasi Tambahan:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, f"Bahasa Terdeteksi:  {lang_info}", font_size=13, space_after=8)
-    add_bullet(tf, f"Mode Analisis Aktif:  {analysis_mode}", font_size=13)
-    
-    # ====================================================
-    # SLIDE 12 — Hasil Sentimen & Akurasi
-    # ====================================================
+    # --- Pre-calculate all sentiment metrics for slides ---
     lex_pos = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "positif"])
     lex_neg = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "negatif"])
     lex_net = len(df[df["Lexicon Sentiment"].str.lower().str.strip() == "netral"])
@@ -750,22 +623,155 @@ def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
     df_eval = df.dropna(subset=["Ground Truth"]).copy()
     df_eval = df_eval[df_eval["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
     
-    tf = make_content_slide("Hasil Sentimen & Akurasi", "Pie / Bar Chart\nHasil Sentimen")
-    add_bullet(tf, "Sebaran Hasil Tebakan Lexicon:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, f"Positif: {lex_pos}   |   Negatif: {lex_neg}   |   Netral: {lex_net}", font_size=13, space_after=14)
-    add_bullet(tf, f"Sebaran Hasil Tebakan LLM ({llm_model.split('/')[-1]}):", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-    add_bullet(tf, f"Positif: {llm_pos}   |   Negatif: {llm_neg}   |   Netral: {llm_net}", font_size=13, space_after=14)
-    
-    if len(df_eval) > 0:
+    lex_acc = 0.0
+    llm_acc = 0.0
+    has_eval = len(df_eval) > 0
+    if has_eval:
         y_true = df_eval["Ground Truth"].str.strip().str.lower()
         y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
         y_llm = df_eval["LLM Sentiment"].str.strip().str.lower()
         lex_acc = accuracy_score(y_true, y_lexicon) if len(y_true) > 0 else 0
         llm_acc = accuracy_score(y_true, y_llm) if len(y_true) > 0 else 0
+    
+    # ====================================================
+    # SLIDE 2 — Ringkasan Dataset Video Aktif (Dataset di Awal)
+    # ====================================================
+    tf = make_content_slide("Ringkasan Dataset Video", "Screenshot\nDashboard Utama")
+    add_bullet(tf, "Ini dia video target yang mau kita demo-kan hari ini:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, f"Judul Video:  {video_title}", font_size=13, space_after=8)
+    add_bullet(tf, f"URL Video:  {video_url}", font_size=13, space_after=8)
+    add_bullet(tf, f"Total Data:  {len(df)} komentar asli netizen yang berhasil di-scrape", font_size=13, space_after=14)
+    
+    lang_info = "Indonesia"
+    if "Language" in df.columns:
+        lang_counts = df["Language"].value_counts()
+        lang_parts = []
+        for lang, count in lang_counts.items():
+            pct = (count / len(df) * 100) if len(df) > 0 else 0
+            name = "Indonesia" if str(lang).strip().lower() == "id" else ("Inggris" if str(lang).strip().lower() == "en" else str(lang).upper())
+            lang_parts.append(f"{name} ({pct:.1f}%)")
+        lang_info = ",  ".join(lang_parts)
+    add_bullet(tf, "Detail Pengaturan:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, f"Bahasa Komentar:  {lang_info}", font_size=13, space_after=8)
+    add_bullet(tf, f"Mode Analisis Aktif:  {analysis_mode}", font_size=13)
+    
+    # ====================================================
+    # SLIDE 3 — Pendekatan Hibrida: Lexicon vs LLM
+    # ====================================================
+    tf = make_content_slide("Pendekatan Analisis: Lexicon vs LLM", "Tabel Perbandingan\nHasil Komentar")
+    add_bullet(tf, "Untuk video tadi, kita langsung adu 2 metode analitik sekaligus:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Lexicon-Based  →  Deteksi instan pakai kamus kata (InSet & VADER)", font_size=13, space_after=8)
+    add_bullet(tf, "LLM-Based  →  Model AI NVIDIA NIM buat pahami konteks kalimat", font_size=13, space_after=14)
+    add_bullet(tf, "Keuntungan digabung?", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Kamus itu super kencang, tapi LLM pinter baca sarkasme & slang gaul", font_size=13, space_after=8)
+    add_bullet(tf, "Bandingan keduanya bikin kita dapet kesimpulan yang objektif", font_size=13)
+    
+    # ====================================================
+    # SLIDE 4 — Lexicon Bahasa Indonesia (Stemming + InSet)
+    # ====================================================
+    tf = make_content_slide("Lexicon Bahasa Indonesia", "Diagram / Screenshot\nHasil Lexicon Indonesia")
+    add_bullet(tf, "Cara sistem olah komentar bahasa Indonesia di video ini:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Pemisahan komentar bahasa Indonesia dilakukan otomatis", font_size=13, space_after=8)
+    add_bullet(tf, "Slang dibersihkan dulu (contoh: 'yg' -> 'yang', 'gk' -> 'tidak')", font_size=13, space_after=8)
+    add_bullet(tf, "Kata berimbuhan diubah ke kata dasar pakai Stemmer Sastrawi", font_size=13, space_after=14)
+    add_bullet(tf, "Pencocokan Kamus InSet:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Tiap kata dicocokkan ke kamus buat dicari skor positif/negatifnya", font_size=13, space_after=8)
+    add_bullet(tf, "Skor akhir dijumlahkan buat tentuin sentimen komentarnya", font_size=13)
+
+    # ====================================================
+    # SLIDE 5 — Fitur Kustom: Pengelolaan Kamus Slang
+    # ====================================================
+    tf = make_content_slide("Pengelolaan Kamus Slang Kustom", "Tabel Kamus Slang\ndi Dashboard")
+    add_bullet(tf, "Biar tebakan Kamus makin pinter, kita buat editor Kamus Slang kustom:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Bisa tambah, edit, atau hapus padanan kata gaul sesuka hati kita di sidebar", font_size=13, space_after=8)
+    add_bullet(tf, "Membantu menaikkan akurasi Lexicon secara drastis dari waktu ke waktu", font_size=13, space_after=14)
+    add_bullet(tf, "Kelebihan Fitur Ini:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Sangat fleksibel untuk bahasa kekinian atau singkatan khas komunitas", font_size=13, space_after=8)
+    add_bullet(tf, "Perubahan kata slang langsung diterapkan secara instan di analisis berikutnya", font_size=13)
+    
+    # ====================================================
+    # SLIDE 6 — Lexicon Bahasa Inggris (VADER)
+    # ====================================================
+    tf = make_content_slide("Lexicon Bahasa Inggris — VADER", "Grafik Sebaran\nSentimen Inggris")
+    add_bullet(tf, "Gimana dengan komentar bahasa Inggris di video tadi?", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Kita pakai VADER Lexicon yang emang pas buat bahasa media sosial", font_size=13, space_after=8)
+    add_bullet(tf, "Hebatnya, nggak perlu stemming buat nemu kata dasar", font_size=13, space_after=8)
+    add_bullet(tf, "Pinter baca emoji (😊), tulisan caps lock (ANGRY), dan tanda seru (!!!)", font_size=13, space_after=14)
+    add_bullet(tf, "Aturan Klasifikasi:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Menghasilkan compound score dari rentang -1 sampai +1", font_size=13, space_after=8)
+    add_bullet(tf, "Batas sentimen: ≥ 0.05 Positif, ≤ -0.05 Negatif, sisanya Netral", font_size=13)
+    
+    # ====================================================
+    # SLIDE 7 — Model LLM & Ground Truth
+    # ====================================================
+    tf = make_content_slide("Model LLM & Ground Truth", "Grafik Performa\nAkurasi Model")
+    add_bullet(tf, "Dua jenis model AI di belakang layar:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Model Utama (Llama 3.1 8B)  →  Buat analisis cepat ratusan komentar", font_size=13, space_after=8)
+    add_bullet(tf, "DeepSeek V4 Pro  →  Dipakai buat otomatisasi isi Ground Truth", font_size=13, space_after=14)
+    add_bullet(tf, "Biar demo lancar dan aman dari error:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, f"Model aktif saat ini:  {llm_model.split('/')[-1]}", font_size=13, space_after=8)
+    add_bullet(tf, "Ada auto-fallback ke model cadangan kalau API limit (Error 429)", font_size=13)
+    
+    # ====================================================
+    # SLIDE 8 — Mode Analisis: Konteks Global
+    # ====================================================
+    tf = make_content_slide("Mode Analisis: Konteks Global", "Grafik Distribusi\nSentimen Global")
+    add_bullet(tf, "Pertama, kita tes video ini pakai Mode Konteks Global:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Evaluasi sentimen dilakukan mandiri per komentar (standalone)", font_size=13, space_after=8)
+    add_bullet(tf, "Penilaian murni dari kalimat yang tertulis saja", font_size=13, space_after=8)
+    add_bullet(tf, "Tidak mempertimbangkan isi atau topik video sama sekali", font_size=13, space_after=14)
+    add_bullet(tf, "Kapan kita pakai mode ini?", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Pas mau tahu reaksi umum penonton tanpa butuh info isi video", font_size=13, space_after=8)
+    add_bullet(tf, "Bagus buat membandingkan sentimen antar video secara global", font_size=13)
+    
+    # ====================================================
+    # SLIDE 9 — Mode Konteks ke Video
+    # ====================================================
+    tf = make_content_slide("Mode Analisis: Konteks ke Video", "Screenshot Metadata\n& Transkrip Video")
+    add_bullet(tf, "Kedua, kita tes video yang sama pakai Mode Konteks ke Video:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Sistem kirim judul, deskripsi, tags, & transkrip video sebagai referensi LLM", font_size=13, space_after=8)
+    add_bullet(tf, "Proses penarikan data pakai youtube-transcript-api secara instan", font_size=13, space_after=14)
+    add_bullet(tf, "Efek ke hasil analisis pada dataset ini:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Model LLM bandingkan makna komentar langsung dengan isi video", font_size=13, space_after=8)
+    add_bullet(tf, "Komentar spam atau out-of-context otomatis digeser ke Netral", font_size=13, space_after=8)
+    add_bullet(tf, "Sentimen yang didapat jauh lebih presisi & sesuai konteks video", font_size=13)
+
+    # ====================================================
+    # SLIDE 10 — Hasil Sentimen & Akurasi
+    # ====================================================
+    tf = make_content_slide("Hasil Sentimen & Akurasi", "Pie / Bar Chart\nHasil Sentimen")
+    add_bullet(tf, "Ini dia sebaran hasil tebakan model di video ini:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, f"Hasil Lexicon:  {lex_pos} Positif   |   {lex_neg} Negatif   |   {lex_net} Netral", font_size=13, space_after=8)
+    add_bullet(tf, f"Hasil LLM:  {llm_pos} Positif   |   {llm_neg} Negatif   |   {llm_net} Netral", font_size=13, space_after=14)
+    
+    if has_eval:
         add_bullet(tf, "Skor Akurasi (vs Ground Truth):", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
-        add_bullet(tf, f"Lexicon: {lex_acc*100:.1f}%   |   LLM: {llm_acc*100:.1f}%", font_size=13, color=CLR_GREEN)
+        add_bullet(tf, f"Akurasi Lexicon:  {lex_acc*100:.1f}%", font_size=13, space_after=8)
+        add_bullet(tf, f"Akurasi LLM:  {llm_acc*100:.1f}%", font_size=13, color=CLR_GREEN)
     else:
         add_bullet(tf, "⚠ Hasil akurasi belum muncul karena Ground Truth belum diisi", font_size=13, color=CLR_ORANGE)
+
+    # ====================================================
+    # SLIDE 11 — Pemodelan Topik (Topic Modeling)
+    # ====================================================
+    tf = make_content_slide("Pemodelan Topik (Topic Modeling)", "Pembagian Topik\ndi Tab Visualisasi")
+    add_bullet(tf, "Selain sentimen, sistem memetakan tema obrolan di video ini:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Menggunakan algoritma pembobotan kata TF-IDF", font_size=13, space_after=8)
+    add_bullet(tf, "Pengelompokan otomatis komentar pakai klusterisasi K-Means", font_size=13, space_after=14)
+    add_bullet(tf, "Manfaat Analitik Ini:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Secara otomatis membagi komentar ke dalam 3 topik utama", font_size=13, space_after=8)
+    add_bullet(tf, "Bantu kita tahu apa saja sub-topik yang paling banyak didebatkan", font_size=13)
+
+    # ====================================================
+    # SLIDE 12 — Analisis Perbandingan Global
+    # ====================================================
+    tf = make_content_slide("Analisis Perbandingan Global", "Grafik Perbandingan\nAntar Video")
+    add_bullet(tf, "Terakhir, kita bisa bandingkan video ini dengan riwayat video lainnya:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=14)
+    add_bullet(tf, "Menggabungkan riwayat riil lokal maupun data dari cloud (GSheets)", font_size=13, space_after=8)
+    add_bullet(tf, "Menampilkan grafik akurasi jangka panjang untuk melihat model terbaik", font_size=13, space_after=14)
+    add_bullet(tf, "Fleksibilitas Filter:", font_size=15, bold=True, color=CLR_PRIMARY, space_after=10)
+    add_bullet(tf, "Tersedia filter perbandingan khusus berdasarkan mode analisis", font_size=13, space_after=8)
+    add_bullet(tf, "Bisa memilih / men-toggle video mana saja yang ingin disertakan", font_size=13)
     
     # ====================================================
     # SLIDE 13 — Kesimpulan & Temuan Utama
