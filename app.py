@@ -879,17 +879,28 @@ def convert_df_to_pdf(df, video_title, video_url):
     table_data = [headers]
     
     # Format and append rows as Paragraph cells to allow word wrapping
+    # Helper to truncate text to prevent row height exceeding page size and causing LayoutError.
+    # Also escapes HTML characters to prevent ReportLab XML parser crashes on comments like '<3' or '&'.
+    def cell_text(val, max_len=300):
+        import html
+        if val is None or pd.isna(val):
+            return ""
+        val_str = html.escape(str(val).strip())
+        if len(val_str) > max_len:
+            return val_str[:max_len] + "..."
+        return val_str
+
     for idx, row in df.iterrows():
         no_p = Paragraph(str(idx + 1), td_center_style)
-        author_p = Paragraph(str(row.get("Author", "")), td_left_style)
-        orig_p = Paragraph(str(row.get("Original Comment", "")), td_left_style)
-        clean_p = Paragraph(str(row.get("Cleaned Comment", "")), td_left_style)
-        lex_p = Paragraph(str(row.get("Lexicon Sentiment", "")).capitalize(), td_center_style)
-        llm_p = Paragraph(str(row.get("LLM Sentiment", "")).capitalize(), td_center_style)
-        reason_p = Paragraph(str(row.get("LLM Reason", "")), td_left_style)
+        author_p = Paragraph(cell_text(row.get("Author", ""), max_len=40), td_left_style)
+        orig_p = Paragraph(cell_text(row.get("Original Comment", ""), max_len=300), td_left_style)
+        clean_p = Paragraph(cell_text(row.get("Cleaned Comment", ""), max_len=300), td_left_style)
+        lex_p = Paragraph(cell_text(row.get("Lexicon Sentiment", "")).capitalize(), td_center_style)
+        llm_p = Paragraph(cell_text(row.get("LLM Sentiment", "")).capitalize(), td_center_style)
+        reason_p = Paragraph(cell_text(row.get("LLM Reason", ""), max_len=300), td_left_style)
         
-        gt_val = str(row.get("Ground Truth", ""))
-        gt_p = Paragraph(gt_val.capitalize() if gt_val else "-", td_center_style)
+        gt_val = row.get("Ground Truth", "")
+        gt_p = Paragraph(cell_text(gt_val).capitalize() if gt_val else "-", td_center_style)
         
         table_data.append([no_p, author_p, orig_p, clean_p, lex_p, llm_p, reason_p, gt_p])
         
