@@ -841,6 +841,7 @@ def convert_df_to_pdf(df, video_title, video_url):
     story.append(Paragraph(f"Judul Video: {video_title}", meta_style))
     story.append(Paragraph(f"Link Video: <font color='#2563EB'><u>{video_url}</u></font>", meta_link_style))
     story.append(Paragraph(f"Model LLM: {st.session_state.llm_model}", meta_style))
+    story.append(Paragraph(f"Mode Analisis: {st.session_state.analysis_mode}", meta_style))
     lang_label = "Inggris (EN)" if st.session_state.detected_lang == "en" else "Indonesia (ID)"
     story.append(Paragraph(f"Bahasa Terdeteksi: {lang_label}", meta_style))
     story.append(Spacer(1, 15))
