@@ -2873,204 +2873,230 @@ if menu_selection == "Analisis Perbandingan Global":
                         st.info("Belum ada video dengan Ground Truth terisi untuk dibandingkan.")
     st.stop()
 # Main Dashboard Area (SEMANTIKA)
-st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Sentiment Analysis Dashboard</h1>", unsafe_allow_html=True)
-if APP_MODE == "production":
-    st.markdown(
-        '<div style="text-align: right; margin-top: -45px; margin-bottom: 20px;">'
-        '<span style="background-color: #d1fae5; color: #065f46; font-size: 0.85rem; font-weight: 700; '
-        'padding: 4px 10px; border-radius: 9999px; border: 1px solid #a7f3d0;">'
-        'Mode: Production (Cloud Sync)'
-        '</span></div>',
-        unsafe_allow_html=True
-    )
-else:
-    st.markdown(
-        '<div style="text-align: right; margin-top: -45px; margin-bottom: 20px;">'
-        '<span style="background-color: #fee2e2; color: #991b1b; font-size: 0.85rem; font-weight: 700; '
-        'padding: 4px 10px; border-radius: 9999px; border: 1px solid #fecaca;">'
-        'Mode: Development (Offline Lokal)'
-        '</span></div>',
-        unsafe_allow_html=True
-    )
-st.markdown("Aplikasi perbandingan performa analisis sentimen berbasis **Lexicon-based (Sastrawi + InSet)** dan **LLM-based (NVIDIA NIM Llama 3.1)**.")
-st.markdown("---")
-
-if st.session_state.df is not None:
-    # Compute language label
-    if "Language" in st.session_state.df.columns:
-        lang_counts = st.session_state.df["Language"].value_counts()
-        total_comments = len(st.session_state.df)
-        lang_labels = []
-        for lang, count in lang_counts.items():
-            pct = (count / total_comments * 100) if total_comments > 0 else 0
-            if str(lang).strip().lower() == "id":
-                lang_labels.append(f"Indonesia (ID) {pct:.1f}%")
-            elif str(lang).strip().lower() == "en":
-                lang_labels.append(f"Inggris (EN) {pct:.1f}%")
-            else:
-                lang_labels.append(f"{str(lang).upper()} {pct:.1f}%")
-        lang_label = " & ".join(lang_labels) if lang_labels else "Indonesia (ID)"
-    else:
-        lang_label = "Inggris (EN)" if st.session_state.detected_lang == "en" else "Indonesia (ID)"
-
-    # Header Layout with Thumbnail
-    col_thumb, col_info = st.columns([1.2, 3])
-    
-    with col_thumb:
-        video_id = extract_video_id(st.session_state.video_url)
-        if video_id:
-            thumbnail_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
-            st.image(thumbnail_url, caption="YouTube Video Thumbnail", use_container_width=True)
-            
-    with col_info:
-        st.markdown(f"### :material/movie: **{st.session_state.video_title}**")
+if menu_selection == "Analisis Video Tunggal":
+    st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Sentiment Analysis Dashboard</h1>", unsafe_allow_html=True)
+    if APP_MODE == "production":
         st.markdown(
-            f"""
-            - 🔗 **Link Video:** **[{st.session_state.video_url}]({st.session_state.video_url})**
-            - 📊 **Jumlah Komentar:** **{len(st.session_state.df)} data komentar**
-            - 🧠 **Model LLM Aktif:** **`{st.session_state.llm_model}`**
-            - 🌐 **Bahasa Terdeteksi:** **{lang_label}**
-            - ⚙️ **Mode Analisis:** **Dual Mode (Konteks Global & Video)**
+            '<div style="text-align: right; margin-top: -45px; margin-bottom: 20px;">'
+            '<span style="background-color: #d1fae5; color: #065f46; font-size: 0.85rem; font-weight: 700; '
+            'padding: 4px 10px; border-radius: 9999px; border: 1px solid #a7f3d0;">'
+            'Mode: Production (Cloud Sync)'
+            '</span></div>',
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            '<div style="text-align: right; margin-top: -45px; margin-bottom: 20px;">'
+            '<span style="background-color: #fee2e2; color: #991b1b; font-size: 0.85rem; font-weight: 700; '
+            'padding: 4px 10px; border-radius: 9999px; border: 1px solid #fecaca;">'
+            'Mode: Development (Offline Lokal)'
+            '</span></div>',
+            unsafe_allow_html=True
+        )
+    st.markdown("Aplikasi perbandingan performa analisis sentimen berbasis **Lexicon-based (Sastrawi + InSet)** dan **LLM-based (NVIDIA NIM Llama 3.1)**.")
+    st.markdown("---")
+    
+    if st.session_state.df is not None:
+
+        # Compute language label
+        if "Language" in st.session_state.df.columns:
+            lang_counts = st.session_state.df["Language"].value_counts()
+            total_comments = len(st.session_state.df)
+            lang_labels = []
+            for lang, count in lang_counts.items():
+                pct = (count / total_comments * 100) if total_comments > 0 else 0
+                if str(lang).strip().lower() == "id":
+                    lang_labels.append(f"Indonesia (ID) {pct:.1f}%")
+                elif str(lang).strip().lower() == "en":
+                    lang_labels.append(f"Inggris (EN) {pct:.1f}%")
+                else:
+                    lang_labels.append(f"{str(lang).upper()} {pct:.1f}%")
+            lang_label = " & ".join(lang_labels) if lang_labels else "Indonesia (ID)"
+        else:
+            lang_label = "Inggris (EN)" if st.session_state.detected_lang == "en" else "Indonesia (ID)"
+
+        # Header Layout with Thumbnail
+        col_thumb, col_info = st.columns([1.2, 3])
+
+        with col_thumb:
+            video_id = extract_video_id(st.session_state.video_url)
+            if video_id:
+                thumbnail_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+                st.image(thumbnail_url, caption="YouTube Video Thumbnail", use_container_width=True)
+
+        with col_info:
+            st.markdown(f"### :material/movie: **{st.session_state.video_title}**")
+            st.markdown(
+                f"""
+                - 🔗 **Link Video:** **[{st.session_state.video_url}]({st.session_state.video_url})**
+                - 📊 **Jumlah Komentar:** **{len(st.session_state.df)} data komentar**
+                - 🧠 **Model LLM Aktif:** **`{st.session_state.llm_model}`**
+                - 🌐 **Bahasa Terdeteksi:** **{lang_label}**
+                - ⚙️ **Mode Analisis:** **Dual Mode (Konteks Global & Video)**
+                """,
+                unsafe_allow_html=True
+            )
+
+        st.markdown("---")
+
+        # Root Tabs
+        tab_global, tab_video, tab_compare = st.tabs([
+            "🌐 Mode Konteks Global",
+            "🎥 Mode Konteks ke Video",
+            "📊 Perbandingan Performa"
+        ])
+
+        with tab_global:
+            render_mode_tab_content("global", "LLM Sentiment Global", "LLM Reason Global", "Konteks Global")
+
+        with tab_video:
+            render_mode_tab_content("video", "LLM Sentiment Video", "LLM Reason Video", "Konteks ke Video")
+
+        with tab_compare:
+            st.markdown("### Perbandingan Performa: Konteks Global vs Konteks ke Video")
+
+            df_eval = st.session_state.df.dropna(subset=["Ground Truth"]).copy()
+            df_eval = df_eval[df_eval["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
+
+            if len(df_eval) == 0:
+                st.warning("Belum ada Ground Truth yang diisi. Silakan isi beberapa baris pada kolom Ground Truth di salah satu tab mode untuk menampilkan perbandingan performa.", icon=":material/warning:")
+            else:
+                y_true = df_eval["Ground Truth"].str.strip().str.lower()
+
+                # Scores for Lexicon
+                y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
+                lex_acc = accuracy_score(y_true, y_lexicon)
+                lex_prec, lex_rec, lex_f1, _ = precision_recall_fscore_support(y_true, y_lexicon, average='macro', zero_division=0)
+
+                # Scores for LLM Global
+                y_llm_global = df_eval["LLM Sentiment Global"].str.strip().str.lower()
+                llm_g_acc = accuracy_score(y_true, y_llm_global)
+                llm_g_prec, llm_g_rec, llm_g_f1, _ = precision_recall_fscore_support(y_true, y_llm_global, average='macro', zero_division=0)
+
+                # Scores for LLM Video
+                y_llm_video = df_eval["LLM Sentiment Video"].str.strip().str.lower()
+                llm_v_acc = accuracy_score(y_true, y_llm_video)
+                llm_v_prec, llm_v_rec, llm_v_f1, _ = precision_recall_fscore_support(y_true, y_llm_video, average='macro', zero_division=0)
+
+                # 1. Bar Chart Comparison
+                st.markdown("#### Perbandingan Akurasi & F1-Score")
+                metrics = ["Akurasi", "F1-Score"]
+                lex_scores = [lex_acc * 100, lex_f1 * 100]
+                llm_g_scores = [llm_g_acc * 100, llm_g_f1 * 100]
+                llm_v_scores = [llm_v_acc * 100, llm_v_f1 * 100]
+
+                x = np.arange(len(metrics))
+                width = 0.25
+
+                fig_cmp, ax_cmp = plt.subplots(figsize=(10, 5))
+                rects1 = ax_cmp.bar(x - width, lex_scores, width, label='Lexicon-Based', color='#3498db')
+                rects2 = ax_cmp.bar(x, llm_g_scores, width, label='LLM Konteks Global', color='#e67e22')
+                rects3 = ax_cmp.bar(x + width, llm_v_scores, width, label='LLM Konteks ke Video', color='#2ecc71')
+
+                ax_cmp.set_ylabel('Skor (%)', weight="bold")
+                ax_cmp.set_title('Perbandingan Metrik: Lexicon vs LLM Global vs LLM Video', weight="bold", fontsize=12)
+                ax_cmp.set_xticks(x)
+                ax_cmp.set_xticklabels(metrics, weight="bold")
+                ax_cmp.set_ylim(0, 115)
+                ax_cmp.legend()
+
+                def autolabel_cmp(rects):
+                    for rect in rects:
+                        height = rect.get_height()
+                        ax_cmp.annotate(f'{height:.1f}%',
+                                    xy=(rect.get_x() + rect.get_width() / 2, height),
+                                    xytext=(0, 3),
+                                    textcoords="offset points",
+                                    ha='center', va='bottom', weight="bold", fontsize=8)
+                autolabel_cmp(rects1)
+                autolabel_cmp(rects2)
+                autolabel_cmp(rects3)
+
+                plt.tight_layout()
+                st.pyplot(fig_cmp)
+                plt.close()
+
+                # 2. Side-by-side Point Cards
+                st.markdown("#### Perbandingan Skor Poin")
+                lex_points, llm_g_points, llm_v_points = 0, 0, 0
+                for idx, row in df_eval.iterrows():
+                    gt = str(row["Ground Truth"]).strip().lower()
+                    lex = str(row["Lexicon Sentiment"]).strip().lower()
+                    llm_g = str(row["LLM Sentiment Global"]).strip().lower()
+                    llm_v = str(row["LLM Sentiment Video"]).strip().lower()
+
+                    lex_points += 1 if lex == gt else -1
+                    llm_g_points += 1 if llm_g == gt else -1
+                    llm_v_points += 1 if llm_v == gt else -1
+
+                col_c1, col_c2, col_c3 = st.columns(3)
+                with col_c1:
+                    st.markdown(
+                        f"""
+                        <div class="point-card lexicon-card">
+                            <h3>LEXICON-BASED</h3>
+                            <div style="font-size: 2.5rem; font-weight: 800; margin: 5px 0;">{lex_points} Poin</div>
+                            <p style="margin-top: 5px; font-size: 0.8rem;">Sastrawi + InSet</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                with col_c2:
+                    st.markdown(
+                        f"""
+                        <div class="point-card llm-card" style="background: linear-gradient(135deg, #d35400, #e67e22);">
+                            <h3>LLM KONTEKS GLOBAL</h3>
+                            <div style="font-size: 2.5rem; font-weight: 800; margin: 5px 0;">{llm_g_points} Poin</div>
+                            <p style="margin-top: 5px; font-size: 0.8rem;">Llama 3.1 8B (NIM)</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                with col_c3:
+                    st.markdown(
+                        f"""
+                        <div class="point-card llm-card">
+                            <h3>LLM KONTEKS VIDEO</h3>
+                            <div style="font-size: 2.5rem; font-weight: 800; margin: 5px 0;">{llm_v_points} Poin</div>
+                            <p style="margin-top: 5px; font-size: 0.8rem;">Llama 3.1 8B (NIM)</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                # 3. Summary Table
+                st.markdown("#### Tabel Perbandingan Seluruh Metrik")
+                summary_data = {
+                    "Metrik": ["Akurasi", "Presisi (Macro)", "Recall (Macro)", "F1-Score (Macro)"],
+                    "Lexicon-Based": [f"{lex_acc*100:.1f}%", f"{lex_prec*100:.1f}%", f"{lex_rec*100:.1f}%", f"{lex_f1*100:.1f}%"],
+                    "LLM Konteks Global": [f"{llm_g_acc*100:.1f}%", f"{llm_g_prec*100:.1f}%", f"{llm_g_rec*100:.1f}%", f"{llm_g_f1*100:.1f}%"],
+                    "LLM Konteks ke Video": [f"{llm_v_acc*100:.1f}%", f"{llm_v_prec*100:.1f}%", f"{llm_v_rec*100:.1f}%", f"{llm_v_f1*100:.1f}%"]
+                }
+                st.table(pd.DataFrame(summary_data))
+
+
+    else:
+
+        st.markdown(
+            """
+            <div class="info-box" style="border-left-color: #3498db;">
+                <h3>Selamat datang di SEMANTIKA!</h3>
+                <p>Silakan gunakan panel konfigurasi di sidebar kiri untuk menghubungkan dashboard dengan YouTube dan memulai analisis sentimen.</p>
+            </div>
             """,
             unsafe_allow_html=True
         )
-    
-    st.markdown("---")
-    
-    # Root Tabs
-    tab_global, tab_video, tab_compare = st.tabs([
-        "🌐 Mode Konteks Global",
-        "🎥 Mode Konteks ke Video",
-        "📊 Perbandingan Performa"
-    ])
-    
-    with tab_global:
-        render_mode_tab_content("global", "LLM Sentiment Global", "LLM Reason Global", "Konteks Global")
-        
-    with tab_video:
-        render_mode_tab_content("video", "LLM Sentiment Video", "LLM Reason Video", "Konteks ke Video")
-        
-    with tab_compare:
-        st.markdown("### Perbandingan Performa: Konteks Global vs Konteks ke Video")
-        
-        df_eval = st.session_state.df.dropna(subset=["Ground Truth"]).copy()
-        df_eval = df_eval[df_eval["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
-        
-        if len(df_eval) == 0:
-            st.warning("Belum ada Ground Truth yang diisi. Silakan isi beberapa baris pada kolom Ground Truth di salah satu tab mode untuk menampilkan perbandingan performa.", icon=":material/warning:")
-        else:
-            y_true = df_eval["Ground Truth"].str.strip().str.lower()
-            
-            # Scores for Lexicon
-            y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
-            lex_acc = accuracy_score(y_true, y_lexicon)
-            lex_prec, lex_rec, lex_f1, _ = precision_recall_fscore_support(y_true, y_lexicon, average='macro', zero_division=0)
-            
-            # Scores for LLM Global
-            y_llm_global = df_eval["LLM Sentiment Global"].str.strip().str.lower()
-            llm_g_acc = accuracy_score(y_true, y_llm_global)
-            llm_g_prec, llm_g_rec, llm_g_f1, _ = precision_recall_fscore_support(y_true, y_llm_global, average='macro', zero_division=0)
-            
-            # Scores for LLM Video
-            y_llm_video = df_eval["LLM Sentiment Video"].str.strip().str.lower()
-            llm_v_acc = accuracy_score(y_true, y_llm_video)
-            llm_v_prec, llm_v_rec, llm_v_f1, _ = precision_recall_fscore_support(y_true, y_llm_video, average='macro', zero_division=0)
-            
-            # 1. Bar Chart Comparison
-            st.markdown("#### Perbandingan Akurasi & F1-Score")
-            metrics = ["Akurasi", "F1-Score"]
-            lex_scores = [lex_acc * 100, lex_f1 * 100]
-            llm_g_scores = [llm_g_acc * 100, llm_g_f1 * 100]
-            llm_v_scores = [llm_v_acc * 100, llm_v_f1 * 100]
-            
-            x = np.arange(len(metrics))
-            width = 0.25
-            
-            fig_cmp, ax_cmp = plt.subplots(figsize=(10, 5))
-            rects1 = ax_cmp.bar(x - width, lex_scores, width, label='Lexicon-Based', color='#3498db')
-            rects2 = ax_cmp.bar(x, llm_g_scores, width, label='LLM Konteks Global', color='#e67e22')
-            rects3 = ax_cmp.bar(x + width, llm_v_scores, width, label='LLM Konteks ke Video', color='#2ecc71')
-            
-            ax_cmp.set_ylabel('Skor (%)', weight="bold")
-            ax_cmp.set_title('Perbandingan Metrik: Lexicon vs LLM Global vs LLM Video', weight="bold", fontsize=12)
-            ax_cmp.set_xticks(x)
-            ax_cmp.set_xticklabels(metrics, weight="bold")
-            ax_cmp.set_ylim(0, 115)
-            ax_cmp.legend()
-            
-            def autolabel_cmp(rects):
-                for rect in rects:
-                    height = rect.get_height()
-                    ax_cmp.annotate(f'{height:.1f}%',
-                                xy=(rect.get_x() + rect.get_width() / 2, height),
-                                xytext=(0, 3),
-                                textcoords="offset points",
-                                ha='center', va='bottom', weight="bold", fontsize=8)
-            autolabel_cmp(rects1)
-            autolabel_cmp(rects2)
-            autolabel_cmp(rects3)
-            
-            plt.tight_layout()
-            st.pyplot(fig_cmp)
-            plt.close()
-            
-            # 2. Side-by-side Point Cards
-            st.markdown("#### Perbandingan Skor Poin")
-            lex_points, llm_g_points, llm_v_points = 0, 0, 0
-            for idx, row in df_eval.iterrows():
-                gt = str(row["Ground Truth"]).strip().lower()
-                lex = str(row["Lexicon Sentiment"]).strip().lower()
-                llm_g = str(row["LLM Sentiment Global"]).strip().lower()
-                llm_v = str(row["LLM Sentiment Video"]).strip().lower()
-                
-                lex_points += 1 if lex == gt else -1
-                llm_g_points += 1 if llm_g == gt else -1
-                llm_v_points += 1 if llm_v == gt else -1
-                
-            col_c1, col_c2, col_c3 = st.columns(3)
-            with col_c1:
-                st.markdown(
-                    f"""
-                    <div class="point-card lexicon-card">
-                        <h3>LEXICON-BASED</h3>
-                        <div style="font-size: 2.5rem; font-weight: 800; margin: 5px 0;">{lex_points} Poin</div>
-                        <p style="margin-top: 5px; font-size: 0.8rem;">Sastrawi + InSet</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-            with col_c2:
-                st.markdown(
-                    f"""
-                    <div class="point-card llm-card" style="background: linear-gradient(135deg, #d35400, #e67e22);">
-                        <h3>LLM KONTEKS GLOBAL</h3>
-                        <div style="font-size: 2.5rem; font-weight: 800; margin: 5px 0;">{llm_g_points} Poin</div>
-                        <p style="margin-top: 5px; font-size: 0.8rem;">Llama 3.1 8B (NIM)</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-            with col_c3:
-                st.markdown(
-                    f"""
-                    <div class="point-card llm-card">
-                        <h3>LLM KONTEKS VIDEO</h3>
-                        <div style="font-size: 2.5rem; font-weight: 800; margin: 5px 0;">{llm_v_points} Poin</div>
-                        <p style="margin-top: 5px; font-size: 0.8rem;">Llama 3.1 8B (NIM)</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                
-            # 3. Summary Table
-            st.markdown("#### Tabel Perbandingan Seluruh Metrik")
-            summary_data = {
-                "Metrik": ["Akurasi", "Presisi (Macro)", "Recall (Macro)", "F1-Score (Macro)"],
-                "Lexicon-Based": [f"{lex_acc*100:.1f}%", f"{lex_prec*100:.1f}%", f"{lex_rec*100:.1f}%", f"{lex_f1*100:.1f}%"],
-                "LLM Konteks Global": [f"{llm_g_acc*100:.1f}%", f"{llm_g_prec*100:.1f}%", f"{llm_g_rec*100:.1f}%", f"{llm_g_f1*100:.1f}%"],
-                "LLM Konteks ke Video": [f"{llm_v_acc*100:.1f}%", f"{llm_v_prec*100:.1f}%", f"{llm_v_rec*100:.1f}%", f"{llm_v_f1*100:.1f}%"]
-            }
-            st.table(pd.DataFrame(summary_data))
+        st.markdown("""
+        ### Langkah Memulai:
+        1. Pastikan file `.env` Anda sudah terisi dengan **NVIDIA API Key** yang valid.
+        2. Masukkan URL video YouTube/Shorts di panel konfigurasi sebelah kiri.
+        3. Tentukan batas jumlah komentar (contoh: 100).
+        4. Pilih model LLM yang ingin digunakan (disarankan: `meta/llama-3.1-8b-instruct` untuk pemrosesan cepat).
+        5. Klik tombol **Mulai Analisis Data**.
+
+        Aplikasi akan mengunduh komentar, menganalisis dengan kedua metode, dan menampilkan tabel interaktif untuk pengisian **Ground Truth**.
+        """)
+
 
 elif menu_selection == "Kelola Kamus Slang":
     st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Kelola Kamus Slang</h1>", unsafe_allow_html=True)
@@ -3124,25 +3150,3 @@ elif menu_selection == "Kelola Kamus Slang":
                 st.rerun()
             else:
                 st.error("Gagal menyimpan kamus slang.")
-
-else:
-    # Welcome message with clean CSS styling
-    st.markdown(
-        """
-        <div class="info-box" style="border-left-color: #3498db;">
-            <h3>Selamat datang di SEMANTIKA!</h3>
-            <p>Silakan gunakan panel konfigurasi di sidebar kiri untuk menghubungkan dashboard dengan YouTube dan memulai analisis sentimen.</p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    st.markdown("""
-    ### Langkah Memulai:
-    1. Pastikan file `.env` Anda sudah terisi dengan **NVIDIA API Key** yang valid.
-    2. Masukkan URL video YouTube/Shorts di panel konfigurasi sebelah kiri.
-    3. Tentukan batas jumlah komentar (contoh: 100).
-    4. Pilih model LLM yang ingin digunakan (disarankan: `meta/llama-3.1-8b-instruct` untuk pemrosesan cepat).
-    5. Klik tombol **Mulai Analisis Data**.
-    
-    Aplikasi akan mengunduh komentar, menganalisis dengan kedua metode, dan menampilkan tabel interaktif untuk pengisian **Ground Truth**.
-    """)
