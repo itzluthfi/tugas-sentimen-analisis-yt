@@ -502,13 +502,13 @@ def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
         run.font.bold = True
         
         # Separator line below title
-        sep = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.6), Inches(1.05), Inches(5.5), Pt(2))
+        sep = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.6), Inches(1.05), Inches(4.8), Pt(2))
         sep.fill.solid()
         sep.fill.fore_color.rgb = CLR_ACCENT
         sep.line.fill.background()
         
         # Content text box (left column)
-        txBox2 = slide.shapes.add_textbox(Inches(0.7), Inches(1.35), Inches(6.2), Inches(5.6))
+        txBox2 = slide.shapes.add_textbox(Inches(0.7), Inches(1.35), Inches(5.0), Inches(5.6))
         tf = txBox2.text_frame
         tf.word_wrap = True
         # Clear default paragraph
@@ -516,9 +516,9 @@ def convert_df_to_pptx(df, video_title, video_url, analysis_mode, llm_model):
         
         # Image placeholder (right column) — rounded rectangle
         if img_placeholder_label:
-            ph_left = Inches(7.4)
+            ph_left = Inches(6.1)
             ph_top = Inches(1.35)
-            ph_width = Inches(5.3)
+            ph_width = Inches(6.6)
             ph_height = Inches(5.6)
             
             shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, ph_left, ph_top, ph_width, ph_height)
