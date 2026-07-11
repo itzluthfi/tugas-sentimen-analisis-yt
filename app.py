@@ -52,6 +52,833 @@ def interpret_kappa(score):
         return "Sangat Kuat"
 
 
+def upgrade_dataframe_schema(df):
+    """
+    Upgrades older CSV schemas to the new dual-mode schema containing columns:
+    'LLM Sentiment Global', 'LLM Reason Global', 'LLM Sentiment Video', 'LLM Reason Video'
+    """
+    df = df.copy()
+    
+    # Ensure new columns exist
+    if "LLM Sentiment Global" not in df.columns:
+        df["LLM Sentiment Global"] = None
+    if "LLM Reason Global" not in df.columns:
+        df["LLM Reason Global"] = ""
+    if "LLM Sentiment Video" not in df.columns:
+        df["LLM Sentiment Video"] = None
+    if "LLM Reason Video" not in df.columns:
+        df["LLM Reason Video"] = ""
+        
+    # If old columns are present, map them based on 'Analysis Mode'
+    if "LLM Sentiment" in df.columns:
+        for idx, row in df.iterrows():
+            mode = str(row.get("Analysis Mode", "")).strip().lower()
+            val = row.get("LLM Sentiment", "")
+            reason = row.get("LLM Reason", "")
+            
+            # Map values
+            if "video" in mode:
+                if pd.isna(df.at[idx, "LLM Sentiment Video"]) or str(df.at[idx, "LLM Sentiment Video"]).strip() in ["", "nan", "None"]:
+                    df.at[idx, "LLM Sentiment Video"] = val
+                    df.at[idx, "LLM Reason Video"] = reason
+            else:
+                if pd.isna(df.at[idx, "LLM Sentiment Global"]) or str(df.at[idx, "LLM Sentiment Global"]).strip() in ["", "nan", "None"]:
+                    df.at[idx, "LLM Sentiment Global"] = val
+                    df.at[idx, "LLM Reason Global"] = reason
+                    
+    # Fill remaining NaNs with fallback value 'netral'
+    df["LLM Sentiment Global"] = df["LLM Sentiment Global"].fillna("netral").astype(str)
+    df["LLM Sentiment Video"] = df["LLM Sentiment Video"].fillna("netral").astype(str)
+    df["LLM Reason Global"] = df["LLM Reason Global"].fillna("").astype(str)
+    df["LLM Reason Video"] = df["LLM Reason Video"].fillna("").astype(str)
+
+    # Ensure Lexicon columns exist
+    if "Lexicon Sentiment" not in df.columns:
+        df["Lexicon Sentiment"] = "netral"
+    if "Lexicon Score" not in df.columns:
+        df["Lexicon Score"] = 0
+    df["Lexicon Sentiment"] = df["Lexicon Sentiment"].fillna("netral").astype(str)
+        
+    # Ensure Ground Truth exists
+    if "Ground Truth" not in df.columns:
+        df["Ground Truth"] = ""
+    df["Ground Truth"] = df["Ground Truth"].fillna("")
+        
+    return df
+
+
+    return df
+
+
+def render_evaluation_metrics(df_eval, llm_col_sentiment, llm_col_reason, mode_title):
+    # Filter rows with Ground Truth
+    df_eval_filtered = df_eval.dropna(subset=["Ground Truth"]).copy()
+    df_eval_filtered = df_eval_filtered[df_eval_filtered["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
+    
+    if len(df_eval_filtered) == 0:
+        st.warning(f"Belum ada Ground Truth yang diisi untuk {mode_title}. Silakan isi beberapa baris pada kolom Ground Truth di tabel atas untuk memunculkan evaluasi metrik akurasi.", icon=":material/warning:")
+        return None
+        
+    total_gt = len(df_eval_filtered)
+    st.success(
+        f"Menghitung performa {mode_title} berdasarkan **{total_gt}** komentar yang telah dilabeli Ground Truth (Evaluasi seluruh kelas: Positif, Negatif, dan Netral).",
+        icon=":material/check_circle:"
+    )
+    
+    y_true = df_eval_filtered["Ground Truth"].str.strip().str.lower()
+    y_lexicon = df_eval_filtered["Lexicon Sentiment"].str.strip().str.lower()
+    y_llm = df_eval_filtered[llm_col_sentiment].str.strip().str.lower()
+    
+    # Standard ML Scores
+    lex_acc = accuracy_score(y_true, y_lexicon)
+    lex_prec, lex_rec, lex_f1, _ = precision_recall_fscore_support(y_true, y_lexicon, average='macro', zero_division=0)
+    kappa_lex = cohen_kappa_score(y_true, y_lexicon)
+    
+    llm_acc = accuracy_score(y_true, y_llm)
+    llm_prec, llm_rec, llm_f1, _ = precision_recall_fscore_support(y_true, y_llm, average='macro', zero_division=0)
+    kappa_llm = cohen_kappa_score(y_true, y_llm)
+    
+    # Calculate SEMANTIKA Points System (all 3 classes)
+    lex_points = 0
+    llm_points = 0
+    lex_correct = 0
+    llm_correct = 0
+    
+    # Breakdown counters
+    lex_correct_pos = 0
+    lex_correct_neg = 0
+    lex_correct_net = 0
+    
+    llm_correct_pos = 0
+    llm_correct_neg = 0
+    llm_correct_net = 0
+    
+    total_pos = 0
+    total_neg = 0
+    total_net = 0
+    
+    for idx, row in df_eval_filtered.iterrows():
+        gt = str(row["Ground Truth"]).strip().lower()
+        lex = str(row["Lexicon Sentiment"]).strip().lower()
+        llm = str(row[llm_col_sentiment]).strip().lower()
+        
+        if gt == "positif":
+            total_pos += 1
+        elif gt == "negatif":
+            total_neg += 1
+        elif gt == "netral":
+            total_net += 1
+            
+        # Lexicon
+        if lex == gt:
+            lex_points += 1
+            lex_correct += 1
+            if gt == "positif":
+                lex_correct_pos += 1
+            elif gt == "negatif":
+                lex_correct_neg += 1
+            elif gt == "netral":
+                lex_correct_net += 1
+        else:
+            lex_points -= 1
+            
+        # LLM
+        if llm == gt:
+            llm_points += 1
+            llm_correct += 1
+            if gt == "positif":
+                llm_correct_pos += 1
+            elif gt == "negatif":
+                llm_correct_neg += 1
+            elif gt == "netral":
+                llm_correct_net += 1
+        else:
+            llm_points -= 1
+
+    total_eval_comments = len(df_eval_filtered)
+
+    # Render Points Comparison UI Cards
+    col_pts1, col_pts2 = st.columns(2)
+    with col_pts1:
+        st.markdown(
+            f"""
+            <div class="point-card lexicon-card">
+                <h3>POIN PERFORMA LEXICON</h3>
+                <div style="font-size: 3rem; font-weight: 800; margin: 5px 0;">{lex_points}</div>
+                <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 5px;">Total Benar: {lex_correct} / {total_eval_comments} Komentar</div>
+                <div style="font-size: 0.85rem; opacity: 0.8; line-height: 1.4; margin-bottom: 8px; text-align: left; padding-left: 20%;">
+                    • Positif: {lex_correct_pos} / {total_pos}<br/>
+                    • Negatif: {lex_correct_neg} / {total_neg}<br/>
+                    • Netral: {lex_correct_net} / {total_net}
+                </div>
+                <p style="margin-top: 5px; font-size: 0.8rem;">Metode Sastrawi + InSet Lexicon</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+    with col_pts2:
+        st.markdown(
+            f"""
+            <div class="point-card llm-card">
+                <h3>POIN PERFORMA LLM ({mode_title})</h3>
+                <div style="font-size: 3rem; font-weight: 800; margin: 5px 0;">{llm_points}</div>
+                <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 5px;">Total Benar: {llm_correct} / {total_eval_comments} Komentar</div>
+                <div style="font-size: 0.85rem; opacity: 0.8; line-height: 1.4; margin-bottom: 8px; text-align: left; padding-left: 20%;">
+                    • Positif: {llm_correct_pos} / {total_pos}<br/>
+                    • Negatif: {llm_correct_neg} / {total_neg}<br/>
+                    • Netral: {llm_correct_net} / {total_net}
+                </div>
+                <p style="margin-top: 5px; font-size: 0.8rem;">NVIDIA NIM ({st.session_state.llm_model.split('/')[-1]})</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+    # Render Points Donut Charts for Accuracy
+    def pct_val_fmt(pct, allvals):
+        absolute = int(round(pct/100.*np.sum(allvals)))
+        return f"{pct:.1f}%\n({absolute} data)"
+        
+    fig_perf, (ax_p1, ax_p2) = plt.subplots(1, 2, figsize=(8, 3))
+    perf_colors = ["#2ecc71", "#e74c3c"]
+    
+    # Lexicon Donut
+    lex_incorrect = total_eval_comments - lex_correct
+    if total_eval_comments > 0:
+        sizes = [lex_correct, lex_incorrect]
+        labels = ["Benar", "Salah"]
+        ax_p1.pie(sizes, labels=labels, autopct=lambda pct: pct_val_fmt(pct, sizes), startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.70, textprops=dict(color="black", weight="bold", fontsize=8))
+        ax_p1.set_title("Akurasi Lexicon (Benar vs Salah)", fontsize=9, fontweight="bold")
+        centre_circle = plt.Circle((0,0), 0.50, fc='white')
+        ax_p1.add_artist(centre_circle)
+        
+    # LLM Donut
+    llm_incorrect = total_eval_comments - llm_correct
+    if total_eval_comments > 0:
+        sizes = [llm_correct, llm_incorrect]
+        labels = ["Benar", "Salah"]
+        ax_p2.pie(sizes, labels=labels, autopct=lambda pct: pct_val_fmt(pct, sizes), startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.70, textprops=dict(color="black", weight="bold", fontsize=8))
+        ax_p2.set_title(f"Akurasi LLM {mode_title}", fontsize=9, fontweight="bold")
+        centre_circle = plt.Circle((0,0), 0.50, fc='white')
+        ax_p2.add_artist(centre_circle)
+        
+    plt.tight_layout()
+    st.pyplot(fig_perf)
+    plt.close()
+    
+    # Point Rules Explanation
+    st.markdown("""
+    <div class="info-box">
+        <strong>Sistem Poin Komparasi SEMANTIKA:</strong><br/>
+        Sistem poin di atas dihitung dengan ketentuan:
+        <ul>
+            <li>Setiap data Ground Truth yang bernilai <strong>positif</strong>, <strong>negatif</strong>, atau <strong>netral</strong> akan dievaluasi.</li>
+            <li>Jika tebakan model <strong>Benar (sesuai Ground Truth)</strong> &rarr; Model mendapatkan <strong>+1 Poin</strong>.</li>
+            <li>Jika tebakan model <strong>Salah</strong> &rarr; Model dikurangi <strong>-1 Poin</strong>.</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Metrics Table
+    st.markdown("##### Tabel Rincian Metrik Klasifikasi")
+    metrics_data = {
+        "Metrik": ["Akurasi", "Presisi (Macro)", "Recall (Macro)", "F1-Score (Macro)", "Cohen's Kappa (Kesepakatan)"],
+        "Lexicon-Based": [f"{lex_acc*100:.1f}%", f"{lex_prec*100:.1f}%", f"{lex_rec*100:.1f}%", f"{lex_f1*100:.1f}%", f"{kappa_lex:.3f} ({interpret_kappa(kappa_lex)})"],
+        "LLM-Based": [f"{llm_acc*100:.1f}%", f"{llm_prec*100:.1f}%", f"{llm_rec*100:.1f}%", f"{llm_f1*100:.1f}%", f"{kappa_llm:.3f} ({interpret_kappa(kappa_llm)})"]
+    }
+    st.table(pd.DataFrame(metrics_data))
+    
+    return {
+        "lex_acc": lex_acc, "lex_prec": lex_prec, "lex_rec": lex_rec, "lex_f1": lex_f1, "kappa_lex": kappa_lex, "lex_points": lex_points,
+        "llm_acc": llm_acc, "llm_prec": llm_prec, "llm_rec": llm_rec, "llm_f1": llm_f1, "kappa_llm": kappa_llm, "llm_points": llm_points,
+        "total_pos": total_pos, "total_neg": total_neg, "total_net": total_net
+    }
+
+
+def render_mode_visualizations(mode_key, llm_col_sentiment, llm_col_reason, mode_title):
+    df_eval = st.session_state.df.dropna(subset=["Ground Truth"]).copy()
+    df_eval = df_eval[df_eval["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
+    
+    if len(df_eval) == 0:
+        st.warning("Belum ada data Ground Truth terisi. Silakan isi Ground Truth pada tabel untuk memunculkan visualisasi.", icon=":material/warning:")
+        return
+
+    y_true = df_eval["Ground Truth"].str.strip().str.lower()
+    y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
+    y_llm = df_eval[llm_col_sentiment].str.strip().str.lower()
+    
+    # Calculate scores on the fly for metrics display
+    lex_acc = accuracy_score(y_true, y_lexicon)
+    lex_prec, lex_rec, lex_f1, _ = precision_recall_fscore_support(y_true, y_lexicon, average='macro', zero_division=0)
+    kappa_lex = cohen_kappa_score(y_true, y_lexicon)
+    
+    llm_acc = accuracy_score(y_true, y_llm)
+    llm_prec, llm_rec, llm_f1, _ = precision_recall_fscore_support(y_true, y_llm, average='macro', zero_division=0)
+    kappa_llm = cohen_kappa_score(y_true, y_llm)
+
+    # Tab Layout for Visualizations
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        ":material/pie_chart: Sebaran Sentimen (Donut Charts)", 
+        ":material/equalizer: Performa Klasifikasi (Metrics)",
+        ":material/bar_chart: Perbandingan Metrik (Bar Chart)",
+        ":material/timeline: Tren Sentimen (Timeline)",
+        ":material/short_text: Frekuensi Kata (Top Words)",
+        ":material/category: Pemodelan Topik (Topic Modeling)"
+    ])
+    
+    # Tab 1: Donut Charts
+    with tab1:
+        st.markdown(f"### Perbandingan Sebaran Sentimen ({mode_title})")
+        sentiment_labels = ["positif", "negatif", "netral"]
+        color_map = {"positif": "#2ecc71", "negatif": "#e74c3c", "netral": "#95a5a6"}
+        
+        def get_sizes_and_colors(series):
+            counts = series.value_counts()
+            sizes = []
+            colors = []
+            labels = []
+            for label in sentiment_labels:
+                count = counts.get(label, 0)
+                if count > 0:
+                    sizes.append(count)
+                    colors.append(color_map[label])
+                    labels.append(label.capitalize())
+            return sizes, colors, labels
+            
+        gt_sizes, gt_colors, gt_labels = get_sizes_and_colors(y_true)
+        lex_sizes, lex_colors, lex_labels = get_sizes_and_colors(y_lexicon)
+        llm_sizes, llm_colors, llm_labels = get_sizes_and_colors(y_llm)
+        
+        fig_donut, (ax_d1, ax_d2, ax_d3) = plt.subplots(1, 3, figsize=(18, 6))
+        
+        # Donut 1: Ground Truth
+        if gt_sizes:
+            ax_d1.pie(gt_sizes, labels=gt_labels, autopct='%1.1f%%', startangle=90, colors=gt_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+            centre_circle = plt.Circle((0,0), 0.50, fc='white')
+            ax_d1.add_artist(centre_circle)
+            ax_d1.set_title("Sebaran Ground Truth", fontsize=12, weight="bold")
+        else:
+            ax_d1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+            
+        # Donut 2: Lexicon
+        if lex_sizes:
+            ax_d2.pie(lex_sizes, labels=lex_labels, autopct='%1.1f%%', startangle=90, colors=lex_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+            centre_circle = plt.Circle((0,0), 0.50, fc='white')
+            ax_d2.add_artist(centre_circle)
+            ax_d2.set_title("Sebaran Lexicon-based", fontsize=12, weight="bold")
+        else:
+            ax_d2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+            
+        # Donut 3: LLM
+        if llm_sizes:
+            ax_d3.pie(llm_sizes, labels=llm_labels, autopct='%1.1f%%', startangle=90, colors=llm_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+            centre_circle = plt.Circle((0,0), 0.50, fc='white')
+            ax_d3.add_artist(centre_circle)
+            ax_d3.set_title(f"Sebaran LLM-based\n({st.session_state.llm_model.split('/')[-1]})", fontsize=12, weight="bold")
+        else:
+            ax_d3.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+            
+        plt.tight_layout()
+        st.pyplot(fig_donut)
+        plt.close()
+
+    # Tab 2: Performa Klasifikasi & Akurasi
+    with tab2:
+        st.markdown(f"### Performa Klasifikasi & Akurasi ({mode_title})")
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.markdown("#### :material/book: Performa Lexicon (Sastrawi + InSet)")
+            st.write(f"- **Accuracy (Akurasi)**: {lex_acc * 100:.2f}%")
+            st.write(f"- **Precision (Presisi)**: {lex_prec * 100:.2f}%")
+            st.write(f"- **Recall (Sensitivitas)**: {lex_rec * 100:.2f}%")
+            st.write(f"- **F1-Score**: {lex_f1 * 100:.2f}%")
+            st.write(f"- **Cohen's Kappa**: `{kappa_lex:.4f}` ({interpret_kappa(kappa_lex)})")
+            
+        with col_m2:
+            st.markdown(f"#### :material/psychology: Performa LLM ({st.session_state.llm_model.split('/')[-1]})")
+            st.write(f"- **Accuracy (Akurasi)**: {llm_acc * 100:.2f}%")
+            st.write(f"- **Precision (Presisi)**: {llm_prec * 100:.2f}%")
+            st.write(f"- **Recall (Sensitivitas)**: {llm_rec * 100:.2f}%")
+            st.write(f"- **F1-Score**: {llm_f1 * 100:.2f}%")
+            st.write(f"- **Cohen's Kappa**: `{kappa_llm:.4f}` ({interpret_kappa(kappa_llm)})")
+
+    # Tab 3: Metrics Comparison Bar Chart
+    with tab3:
+        st.markdown(f"### Perbandingan Metrik Evaluasi (Lexicon vs LLM - {mode_title})")
+        metrics = ['Akurasi', 'Presisi', 'Sensitivitas (Recall)', 'F1-Score']
+        lex_scores = [lex_acc * 100, lex_prec * 100, lex_rec * 100, lex_f1 * 100]
+        llm_scores = [llm_acc * 100, llm_prec * 100, llm_rec * 100, llm_f1 * 100]
+        
+        x = np.arange(len(metrics))
+        width = 0.35
+        
+        fig_metrics, ax_m = plt.subplots(figsize=(10, 5))
+        rects1 = ax_m.bar(x - width/2, lex_scores, width, label='Lexicon-based', color='#3498db')
+        rects2 = ax_m.bar(x + width/2, llm_scores, width, label=f'LLM-based ({st.session_state.llm_model.split("/")[-1]})', color='#2ecc71')
+        
+        ax_m.set_ylabel('Skor (%)', weight="bold")
+        ax_m.set_title(f'Perbandingan Metrik {mode_title}', weight="bold", fontsize=12)
+        ax_m.set_xticks(x)
+        ax_m.set_xticklabels(metrics, weight="bold")
+        ax_m.set_ylim(0, 110)
+        ax_m.legend()
+        
+        def autolabel(rects):
+            for rect in rects:
+                height = rect.get_height()
+                ax_m.annotate(f'{height:.1f}%',
+                            xy=(rect.get_x() + rect.get_width() / 2, height),
+                            xytext=(0, 3),
+                            textcoords="offset points",
+                            ha='center', va='bottom', weight="bold", fontsize=9)
+                            
+        autolabel(rects1)
+        autolabel(rects2)
+        plt.tight_layout()
+        st.pyplot(fig_metrics)
+        plt.close()
+        
+        st.markdown("---")
+        col_k1, col_k2 = st.columns(2)
+        with col_k1:
+            st.info(f"**Cohen's Kappa Lexicon vs GT:**\n\n`{kappa_lex:.4f}` $\\rightarrow$ Kesepakatan **{interpret_kappa(kappa_lex)}**", icon=":material/book:")
+        with col_k2:
+            st.info(f"**Cohen's Kappa LLM vs GT:**\n\n`{kappa_llm:.4f}` $\\rightarrow$ Kesepakatan **{interpret_kappa(kappa_llm)}**", icon=":material/psychology:")
+
+    # Tab 4: Tren Sentimen terhadap Waktu Rilis Komentar
+    with tab4:
+        st.markdown("### Tren Sentimen terhadap Waktu Rilis Komentar")
+        if "Timestamp" in df_eval.columns and df_eval["Timestamp"].notna().any():
+            try:
+                df_time = df_eval.copy()
+                df_time["Datetime"] = pd.to_datetime(df_time["Timestamp"], unit='s', errors='coerce')
+                df_time = df_time.dropna(subset=["Datetime"])
+                
+                if len(df_time) > 0:
+                    df_time["Date"] = df_time["Datetime"].dt.date
+                    time_pivot = df_time.groupby(["Date", "Ground Truth"]).size().unstack(fill_value=0)
+                    for col in ["positif", "negatif", "netral"]:
+                        if col not in time_pivot.columns:
+                            time_pivot[col] = 0
+                    time_pivot = time_pivot.sort_index()
+                    
+                    fig_time, ax_t = plt.subplots(figsize=(12, 5))
+                    if "positif" in time_pivot.columns:
+                        ax_t.plot(time_pivot.index, time_pivot["positif"], marker='o', color='#2ecc71', label='Positif', linewidth=2.5)
+                    if "negatif" in time_pivot.columns:
+                        ax_t.plot(time_pivot.index, time_pivot["negatif"], marker='x', color='#e74c3c', label='Negatif', linewidth=2.5)
+                    if "netral" in time_pivot.columns:
+                        ax_t.plot(time_pivot.index, time_pivot["netral"], marker='s', color='#95a5a6', label='Netral', linewidth=2)
+                    
+                    ax_t.set_ylabel('Jumlah Komentar', weight="bold")
+                    ax_t.set_xlabel('Tanggal', weight="bold")
+                    ax_t.set_title('Tren Perkembangan Sentimen Komentar (Ground Truth)', weight="bold", fontsize=12)
+                    ax_t.grid(True, linestyle='--', alpha=0.5)
+                    ax_t.legend()
+                    plt.xticks(rotation=45)
+                    plt.tight_layout()
+                    st.pyplot(fig_time)
+                    plt.close()
+                else:
+                    st.info("Data timestamp tidak valid.")
+            except Exception as e:
+                st.error(f"Gagal memproses tren waktu: {e}")
+        else:
+            st.info("Komentar tidak memiliki data timestamp yang valid.")
+
+    # Tab 5: Analisis Frekuensi Kata Terpopuler
+    with tab5:
+        st.markdown("### Analisis Frekuensi Kata Kunci Terpopuler")
+        def get_top_words(df_subset, top_n=10):
+            word_counts = {}
+            for text in df_subset["Cleaned Comment"].dropna().astype(str):
+                for word in text.split():
+                    if len(word) > 1:
+                        word_counts[word] = word_counts.get(word, 0) + 1
+            sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
+            return sorted_words[:top_n]
+            
+        df_pos = df_eval[df_eval["Ground Truth"] == "positif"]
+        df_neg = df_eval[df_eval["Ground Truth"] == "negatif"]
+        top_pos = get_top_words(df_pos)
+        top_neg = get_top_words(df_neg)
+        
+        col_pos, col_neg = st.columns(2)
+        with col_pos:
+            st.markdown("#### Kata Kunci pada Komentar Positif")
+            if top_pos:
+                words, counts = zip(*top_pos)
+                fig_p, ax_p = plt.subplots(figsize=(6, 4))
+                ax_p.barh(words[::-1], counts[::-1], color='#2ecc71')
+                ax_p.set_title("Top Kata Komentar Positif", weight="bold")
+                plt.tight_layout()
+                st.pyplot(fig_p)
+                plt.close()
+            else:
+                st.info("Belum ada data kata kunci positif.")
+        with col_neg:
+            st.markdown("#### Kata Kunci pada Komentar Negatif")
+            if top_neg:
+                words, counts = zip(*top_neg)
+                fig_n, ax_n = plt.subplots(figsize=(6, 4))
+                ax_n.barh(words[::-1], counts[::-1], color='#e74c3c')
+                ax_n.set_title("Top Kata Komentar Negatif", weight="bold")
+                plt.tight_layout()
+                st.pyplot(fig_n)
+                plt.close()
+            else:
+                st.info("Belum ada data kata kunci negatif.")
+
+    # Tab 6: Pemodelan Topik (TF-IDF + KMeans)
+    with tab6:
+        st.markdown("### Pemodelan Topik (Topic Modeling)")
+        clean_comments = df_eval["Cleaned Comment"].dropna().astype(str).tolist()
+        original_comments = df_eval["Original Comment"].dropna().astype(str).tolist()
+        
+        if len(clean_comments) >= 5:
+            try:
+                from sklearn.feature_extraction.text import TfidfVectorizer
+                from sklearn.cluster import KMeans
+                vectorizer = TfidfVectorizer(max_features=500, min_df=1, stop_words=None)
+                X = vectorizer.fit_transform(clean_comments)
+                n_clusters = min(3, len(clean_comments))
+                kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
+                kmeans.fit(X)
+                order_centroids = kmeans.cluster_centers_.argsort()[:, ::-1]
+                terms = vectorizer.get_feature_names_out()
+                
+                st.markdown(f"Berhasil mendeteksi **{n_clusters}** kelompok topik utama pembicaraan:")
+                for cluster_idx in range(n_clusters):
+                    top_words = [terms[ind] for ind in order_centroids[cluster_idx, :5]]
+                    topic_keywords = ", ".join(top_words)
+                    cluster_comments = [original_comments[j] for j, label in enumerate(kmeans.labels_) if label == cluster_idx]
+                    sample_comments = cluster_comments[:3]
+                    st.markdown(f"**Topik {cluster_idx + 1}:** `{topic_keywords}` ({len(cluster_comments)} komentar)")
+                    for sc in sample_comments:
+                        st.caption(f"- \"{sc[:120]}...\"")
+                    st.markdown(" ")
+            except Exception as e:
+                st.error(f"Gagal melakukan clustering topik: {e}")
+        else:
+            st.info("Dibutuhkan minimal 5 komentar Ground Truth untuk mendeteksi kelompok topik secara akurat.")
+
+
+def render_mode_tab_content(mode_key, llm_col_sentiment, llm_col_reason, mode_title):
+    # Retrieve base data
+    df_temp = st.session_state.df.copy()
+    
+    # Check if LLM results are missing for this mode
+    missing_results = df_temp[llm_col_sentiment].isna() | (df_temp[llm_col_sentiment].astype(str).str.strip() == "")
+    if missing_results.sum() > 0:
+        st.warning(f"Hasil analisis untuk mode **{mode_title}** belum lengkap ({missing_results.sum()}/{len(df_temp)} komentar kosong). Silakan jalankan analisis ulang untuk melengkapinya.")
+        
+    # We display the metadata context in Video Context mode
+    if mode_key == "video":
+        if "video_context" not in st.session_state or st.session_state.video_context is None:
+            if st.session_state.video_url:
+                try:
+                    with st.spinner("Mengambil transkrip/konteks video dari YouTube..."):
+                        st.session_state.video_context = get_video_context(st.session_state.video_url)
+                except Exception:
+                    st.session_state.video_context = "Gagal mengambil transkrip/konteks video."
+            else:
+                st.session_state.video_context = "Teks transkrip/konteks video tidak tersedia."
+        with st.expander("🎥 Lihat Metadata & Transkrip Subtitel Video (Konteks)", expanded=False):
+            st.markdown("Informasi berikut diekstraksi secara otomatis dari YouTube untuk mencocokkan emosi dan relevansi komentar:")
+            if st.session_state.video_context:
+                st.text_area("Konteks Video (Title, Description, Transcript):", value=st.session_state.video_context, height=250, disabled=True, key=f"video_ctx_area_{mode_key}")
+            else:
+                st.info("Konteks video tidak tersedia.")
+
+    # Sort & Filters for this mode's table
+    agree_mask = df_temp["Lexicon Sentiment"] == df_temp[llm_col_sentiment]
+    total_comments = len(df_temp)
+    agreed_comments = agree_mask.sum()
+    pct_agreement = (agreed_comments / total_comments * 100) if total_comments > 0 else 0
+    
+    empty_gt_mask = df_temp["Ground Truth"].isna() | (df_temp["Ground Truth"].astype(str).str.strip() == "")
+    fillable_count = empty_gt_mask.sum()
+    
+    col_filter, col_actions = st.columns([3, 2])
+    with col_filter:
+        show_mismatch = st.checkbox(f" Hanya tampilkan data Mismatch (Lexicon vs LLM berbeda)", value=False, key=f"filter_mismatch_{mode_key}")
+        st.markdown(f"Tingkat kesepakatan model (Lexicon & LLM sama): **{pct_agreement:.1f}%** ({agreed_comments}/{total_comments} komentar)")
+        sort_by = st.selectbox(
+            " Urutkan Komentar",
+            options=["Bawaan (YouTube)", "Likes Terbanyak", "Waktu Terbaru"],
+            key=f"comment_sort_select_{mode_key}",
+            help="Urutkan komentar pada tabel."
+        )
+    with col_actions:
+        with st.expander("🛠 Fitur Pengisian Cepat (Quick Labeling)", expanded=False):
+            st.write(f"Komentar yang bisa diisi otomatis (kosong): **{fillable_count}**")
+            btn_col1, btn_col2 = st.columns(2)
+            with btn_col1:
+                if st.button("Isi Otomatis", use_container_width=True, key=f"btn_fill_{mode_key}", help="Mengisi Ground Truth kosong dengan hasil prediksi DeepSeek V4 Pro"):
+                    if fillable_count > 0:
+                        with st.status("Mengisi Ground Truth menggunakan DeepSeek V4 Pro...", expanded=True) as status:
+                            if st.session_state.llm_model == "deepseek-ai/deepseek-v4-pro":
+                                st.session_state.df.loc[empty_gt_mask, "Ground Truth"] = st.session_state.df.loc[empty_gt_mask, llm_col_sentiment]
+                            else:
+                                # Fetch on the fly
+                                rows_to_fill = st.session_state.df[empty_gt_mask]
+                                comments_to_analyze = []
+                                for idx, row in rows_to_fill.iterrows():
+                                    comments_to_analyze.append({
+                                        "comment_id": row["Comment ID"],
+                                        "text": row["Original Comment"]
+                                    })
+                                
+                                ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
+                                ds_results = []
+                                batch_size = 20
+                                num_batches = (len(comments_to_analyze) - 1) // batch_size + 1
+                                for batch_idx in range(0, len(comments_to_analyze), batch_size):
+                                    batch = comments_to_analyze[batch_idx:batch_idx+batch_size]
+                                    status.write(f"   - Memproses Batch {batch_idx//batch_size + 1}/{num_batches}...")
+                                    video_context = get_video_context(st.session_state.video_url) if mode_key == "video" else None
+                                    batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
+                                    ds_results.extend(batch_results)
+                                
+                                for r in ds_results:
+                                    cid = r["comment_id"]
+                                    sentiment = r["llm_sentiment"]
+                                    st.session_state.df.loc[st.session_state.df["Comment ID"] == cid, "Ground Truth"] = sentiment
+                                    
+                            st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+                            video_id = extract_video_id(st.session_state.video_url)
+                            if video_id:
+                                safe_title = make_safe_filename(st.session_state.video_title)
+                                history_filename = f"[{video_id}] {safe_title}.csv"
+                                history_path = os.path.join(HISTORY_DIR, history_filename)
+                                st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
+                                if APP_MODE == "production":
+                                    sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
+                            st.rerun()
+            with btn_col2:
+                if st.button("Kosongkan GT", use_container_width=True, key=f"btn_clear_{mode_key}", help="Menghapus semua label Ground Truth"):
+                    st.session_state.df["Ground Truth"] = ""
+                    st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+                    video_id = extract_video_id(st.session_state.video_url)
+                    if video_id:
+                        safe_title = make_safe_filename(st.session_state.video_title)
+                        history_filename = f"[{video_id}] {safe_title}.csv"
+                        history_path = os.path.join(HISTORY_DIR, history_filename)
+                        st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
+                        if APP_MODE == "production":
+                            sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
+                    st.success("Ground Truth dikosongkan!")
+                    st.rerun()
+
+    # Prepare Display DataFrame
+    display_df = df_temp.copy()
+    
+    # Sort
+    if sort_by == "Likes Terbanyak" and "Likes" in display_df.columns:
+        display_df["Likes"] = pd.to_numeric(display_df["Likes"], errors='coerce').fillna(0).astype(int)
+        display_df = display_df.sort_values(by="Likes", ascending=False)
+    elif sort_by == "Waktu Terbaru" and "Timestamp" in display_df.columns:
+        display_df["Timestamp"] = pd.to_numeric(display_df["Timestamp"], errors='coerce').fillna(0)
+        display_df = display_df.sort_values(by="Timestamp", ascending=False)
+        
+    if show_mismatch:
+        display_df = display_df[display_df["Lexicon Sentiment"] != display_df[llm_col_sentiment]]
+
+    # Map table columns
+    table_display_df = display_df.copy()
+    table_display_df["LLM Sentiment"] = table_display_df[llm_col_sentiment]
+    table_display_df["LLM Reason"] = table_display_df[llm_col_reason]
+
+    tab_view_tbl, tab_edit_tbl = st.tabs([":material/visibility: Tampilan Tabel Berwarna", ":material/edit: Edit Ground Truth"])
+    
+    with tab_view_tbl:
+        def style_table_row(row):
+            styles = pd.Series("", index=row.index)
+            def get_color(val):
+                val_lower = str(val).strip().lower()
+                if val_lower == "positif":
+                    return "background-color: #C6EFCE; color: #006100; font-weight: bold;"
+                elif val_lower == "negatif":
+                    return "background-color: #FFC7CE; color: #9C0006; font-weight: bold;"
+                elif val_lower == "netral":
+                    return "background-color: #E2E3E5; color: #383D41;"
+                return ""
+            
+            lex = row.get("Lexicon Sentiment")
+            llm = row.get("LLM Sentiment")
+            gt = row.get("Ground Truth")
+            if "Lexicon Sentiment" in row.index:
+                styles["Lexicon Sentiment"] = get_color(lex)
+            if "LLM Sentiment" in row.index:
+                styles["LLM Sentiment"] = get_color(llm)
+            if "Ground Truth" in row.index:
+                if str(lex).strip().lower() != str(llm).strip().lower():
+                    styles["Ground Truth"] = "background-color: #FFE699; color: #7F6000; font-weight: bold;"
+                else:
+                    styles["Ground Truth"] = get_color(gt)
+            return styles
+
+        styled_df = table_display_df.style.apply(style_table_row, axis=1)
+        st.dataframe(
+            styled_df,
+            column_config={
+                "No": st.column_config.NumberColumn("No", width="small"),
+                "Author": st.column_config.TextColumn("Penulis", width="medium"),
+                "Original Comment": st.column_config.TextColumn("Komentar Asli", width="large"),
+                "Cleaned Comment": st.column_config.TextColumn("Komentar Bersih (Stemmed)", width="medium"),
+                "Likes": st.column_config.NumberColumn("Likes", width="small"),
+                "Time Description": st.column_config.TextColumn("Waktu", width="small"),
+                "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small"),
+                "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small"),
+                "LLM Reason": st.column_config.TextColumn("Alasan LLM", width="medium"),
+                "Ground Truth": st.column_config.TextColumn("Ground Truth", width="small"),
+            },
+            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "LLM Reason", "Ground Truth"],
+            use_container_width=True,
+            hide_index=True,
+            key=f"df_view_{mode_key}"
+        )
+        
+    with tab_edit_tbl:
+        st.info("Gunakan tabel di bawah ini untuk menentukan sentimen sebenarnya (Ground Truth) lewat dropdown pilihan.", icon=":material/info:")
+        edited_df = st.data_editor(
+            table_display_df,
+            column_config={
+                "Ground Truth": st.column_config.SelectboxColumn(
+                    "Ground Truth",
+                    options=["positif", "negatif", "netral", ""],
+                    required=False
+                ),
+                "No": st.column_config.NumberColumn("No", width="small", disabled=True),
+                "Author": st.column_config.TextColumn("Penulis", width="medium", disabled=True),
+                "Original Comment": st.column_config.TextColumn("Komentar Asli", width="large", disabled=True),
+                "Cleaned Comment": st.column_config.TextColumn("Komentar Bersih (Stemmed)", width="medium", disabled=True),
+                "Likes": st.column_config.NumberColumn("Likes", width="small", disabled=True),
+                "Time Description": st.column_config.TextColumn("Waktu", width="small", disabled=True),
+                "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small", disabled=True),
+                "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small", disabled=True),
+                "LLM Reason": st.column_config.TextColumn("Alasan LLM", width="medium", disabled=True),
+            },
+            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "LLM Reason", "Ground Truth"],
+            use_container_width=True,
+            key=f"editor_{mode_key}",
+            num_rows="fixed"
+        )
+        
+        if not edited_df.equals(table_display_df):
+            st.session_state.df.loc[edited_df.index, "Ground Truth"] = edited_df["Ground Truth"]
+            st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+            video_id = extract_video_id(st.session_state.video_url)
+            if video_id:
+                safe_title = make_safe_filename(st.session_state.video_title)
+                history_filename = f"[{video_id}] {safe_title}.csv"
+                history_path = os.path.join(HISTORY_DIR, history_filename)
+                st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
+                if APP_MODE == "production":
+                    sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
+            st.rerun()
+
+    # Download Button Section
+    st.markdown(" ")
+    col_dl1, col_dl2, col_dl3 = st.columns(3)
+    with col_dl1:
+        # Prepare df for export
+        df_export = st.session_state.df.copy()
+        df_export["LLM Sentiment"] = df_export[llm_col_sentiment]
+        df_export["LLM Reason"] = df_export[llm_col_reason]
+        df_export["Analysis Mode"] = mode_title
+        
+        excel_data = convert_df_to_excel(df_export, st.session_state.video_title, st.session_state.video_url)
+        st.download_button(
+            label=":material/download: Ekspor Excel (.xlsx)",
+            data=excel_data,
+            file_name=f"semantika_hasil_{extract_video_id(st.session_state.video_url)}_{mode_key}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+            key=f"dl_excel_{mode_key}"
+        )
+    with col_dl2:
+        df_export = st.session_state.df.copy()
+        df_export["LLM Sentiment"] = df_export[llm_col_sentiment]
+        df_export["LLM Reason"] = df_export[llm_col_reason]
+        df_export["Analysis Mode"] = mode_title
+        
+        pdf_data = convert_df_to_pdf(df_export, st.session_state.video_title, st.session_state.video_url)
+        st.download_button(
+            label=":material/download: Ekspor PDF (.pdf)",
+            data=pdf_data,
+            file_name=f"semantika_hasil_{extract_video_id(st.session_state.video_url)}_{mode_key}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+            key=f"dl_pdf_{mode_key}"
+        )
+    with col_dl3:
+        df_export = st.session_state.df.copy()
+        df_export["LLM Sentiment"] = df_export[llm_col_sentiment]
+        df_export["LLM Reason"] = df_export[llm_col_reason]
+        df_export["Analysis Mode"] = mode_title
+        
+        pptx_data = convert_df_to_pptx(
+            df_export,
+            st.session_state.video_title,
+            st.session_state.video_url,
+            mode_title,
+            st.session_state.llm_model
+        )
+        st.download_button(
+            label=":material/download: Ekspor Presentasi (.pptx)",
+            data=pptx_data,
+            file_name=f"semantika_presentasi_{extract_video_id(st.session_state.video_url)}_{mode_key}.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            use_container_width=True,
+            key=f"dl_pptx_{mode_key}"
+        )
+
+    # Section 3: Live Evaluation
+    st.markdown("---")
+    st.subheader(f":material/trending_up: Evaluasi Performa Real-Time ({mode_title})")
+    
+    df_eval = st.session_state.df.copy()
+    eval_stats = render_evaluation_metrics(df_eval, llm_col_sentiment, llm_col_reason, mode_title)
+
+    # Section 4: Execution Benchmark
+    st.markdown("---")
+    st.subheader(":material/timer: Perbandingan Kecepatan Eksekusi (Benchmark)")
+    lex_t = st.session_state.get("lexicon_time")
+    llm_t = st.session_state.get(f"llm_time_{mode_key}")
+    
+    if lex_t is not None and llm_t is not None:
+        col_bench1, col_bench2 = st.columns(2)
+        with col_bench1:
+            lex_avg = (lex_t / total_comments) * 1000 if total_comments > 0 else 0
+            st.metric(
+                label="Total Durasi Analisis Lexicon (Offline/Lokal)",
+                value=f"{lex_t:.4f} detik",
+                delta=f"{lex_avg:.2f} ms / komentar",
+                delta_color="normal"
+            )
+        with col_bench2:
+            llm_avg = (llm_t / total_comments) * 1000 if total_comments > 0 else 0
+            st.metric(
+                label=f"Total Durasi Analisis LLM ({mode_title})",
+                value=f"{llm_t:.2f} detik",
+                delta=f"{llm_avg:.0f} ms / komentar",
+                delta_color="inverse"
+            )
+        if lex_t > 0:
+            speedup = llm_t / lex_t
+            st.info(f":material/bolt: **Hasil Benchmark Kecepatan:** Metode Lexicon berjalan **{speedup:.1f}x lebih cepat** dibandingkan metode LLM karena diproses secara lokal tanpa latency jaringan.", icon=":material/info:")
+    else:
+        st.info("Informasi waktu eksekusi benchmark hanya tersedia untuk video yang baru dianalisis pada sesi aktif saat ini.", icon=":material/info:")
+
+    # Section 5: Visualizations specific to this mode
+    st.markdown("---")
+    st.subheader(f":material/bar_chart: Tab Analitik & Visualisasi ({mode_title})")
+    
+    render_mode_visualizations(mode_key, llm_col_sentiment, llm_col_reason, mode_title)
+
+
 # Set Streamlit Page Config
 st.set_page_config(
     page_title="SEMANTIKA - YouTube Sentiment Analysis Dashboard",
@@ -211,11 +1038,10 @@ if "video_context" not in st.session_state:
 if st.session_state.df is None and os.path.exists(OUTPUT_FILE):
     try:
         df_loaded = pd.read_csv(OUTPUT_FILE)
-        required_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "Ground Truth"]
+        df_loaded = upgrade_dataframe_schema(df_loaded)
+        required_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "Ground Truth"]
         if all(col in df_loaded.columns for col in required_cols):
             df_loaded["Ground Truth"] = df_loaded["Ground Truth"].fillna("")
-            if "LLM Reason" not in df_loaded.columns:
-                df_loaded["LLM Reason"] = ""
             if "LLM Model" in df_loaded.columns:
                 st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
             else:
@@ -226,10 +1052,8 @@ if st.session_state.df is None and os.path.exists(OUTPUT_FILE):
             else:
                 df_loaded["Language"] = "id"
                 st.session_state.detected_lang = "id"
-            if "Analysis Mode" in df_loaded.columns:
-                st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
-            else:
-                st.session_state.analysis_mode = "Konteks Global"
+            
+            st.session_state.analysis_mode = "Konteks Global"
                 
             if "Lexicon Time" in df_loaded.columns:
                 st.session_state.lexicon_time = float(df_loaded["Lexicon Time"].dropna().iloc[0]) if len(df_loaded["Lexicon Time"].dropna()) > 0 else len(df_loaded) * 0.0015
@@ -1201,14 +2025,7 @@ if menu_selection == "Analisis Video Tunggal":
             format_func=format_model_name,
             help="Pilih model NVIDIA NIM yang ingin digunakan untuk klasifikasi."
         )
-        
-        analysis_mode = st.sidebar.radio(
-            "Mode Analisis Sentimen",
-            options=["Konteks Global", "Konteks ke Video"],
-            index=0 if st.session_state.analysis_mode == "Konteks Global" else 1,
-            help="Pilih apakah sentimen dianalisis secara umum/global atau dikaitkan secara spesifik dengan konten video."
-        )
-        st.session_state.analysis_mode = analysis_mode
+        st.session_state.analysis_mode = "Dual Mode"
 
         force_refresh = st.sidebar.checkbox(
             "Paksa Ambil Baru (Force Refresh)",
@@ -1233,9 +2050,7 @@ if menu_selection == "Analisis Video Tunggal":
                 history_path = os.path.join(HISTORY_DIR, selected_file)
                 try:
                     df_loaded = pd.read_csv(history_path)
-                    df_loaded["Ground Truth"] = df_loaded["Ground Truth"].fillna("")
-                    if "LLM Reason" not in df_loaded.columns:
-                        df_loaded["LLM Reason"] = ""
+                    df_loaded = upgrade_dataframe_schema(df_loaded)
                     
                     # Extract video ID and Title from filename if format is "[id] Title.csv"
                     match = re.match(r"^\[([a-zA-Z0-9_-]+)\]\s*(.*)\.csv$", selected_file)
@@ -1257,10 +2072,7 @@ if menu_selection == "Analisis Video Tunggal":
                         st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
                     if "Language" in df_loaded.columns:
                         st.session_state.detected_lang = str(df_loaded["Language"].iloc[0])
-                    if "Analysis Mode" in df_loaded.columns:
-                        st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
-                    else:
-                        st.session_state.analysis_mode = "Konteks Global"
+                    st.session_state.analysis_mode = "Dual Mode"
                         
                     st.session_state.video_context = None
                     if "Lexicon Time" in df_loaded.columns:
@@ -1268,10 +2080,15 @@ if menu_selection == "Analisis Video Tunggal":
                     else:
                         st.session_state.lexicon_time = len(df_loaded) * 0.0015
                         
-                    if "LLM Time" in df_loaded.columns:
-                        st.session_state.llm_time = float(df_loaded["LLM Time"].dropna().iloc[0]) if len(df_loaded["LLM Time"].dropna()) > 0 else len(df_loaded) * 0.15
+                    if "LLM Time Global" in df_loaded.columns:
+                        st.session_state.llm_time_global = float(df_loaded["LLM Time Global"].dropna().iloc[0]) if len(df_loaded["LLM Time Global"].dropna()) > 0 else len(df_loaded) * 0.15
                     else:
-                        st.session_state.llm_time = len(df_loaded) * 0.15
+                        st.session_state.llm_time_global = len(df_loaded) * 0.15
+                        
+                    if "LLM Time Video" in df_loaded.columns:
+                        st.session_state.llm_time_video = float(df_loaded["LLM Time Video"].dropna().iloc[0]) if len(df_loaded["LLM Time Video"].dropna()) > 0 else len(df_loaded) * 0.15
+                    else:
+                        st.session_state.llm_time_video = len(df_loaded) * 0.15
                     st.sidebar.success("Riwayat berhasil dimuat!")
                     st.rerun()
                 except Exception as e:
@@ -1288,16 +2105,15 @@ if menu_selection == "Analisis Video Tunggal":
             else:
                 video_title = get_video_title(url_input)
                 safe_title = make_safe_filename(video_title)
-                history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
+                history_filename = f"[{video_id}] {safe_title}.csv"
                 history_path = os.path.join(HISTORY_DIR, history_filename)
     
                 if not force_refresh and os.path.exists(history_path):
                     st.sidebar.info("Hasil analisis ditemukan di riwayat lokal. Memuat...")
                     try:
                         df_loaded = pd.read_csv(history_path)
-                        df_loaded["Ground Truth"] = df_loaded["Ground Truth"].fillna("")
-                        if "LLM Reason" not in df_loaded.columns:
-                            df_loaded["LLM Reason"] = ""
+                        df_loaded = upgrade_dataframe_schema(df_loaded)
+                        
                         if "LLM Model" in df_loaded.columns:
                             st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
                         else:
@@ -1308,11 +2124,8 @@ if menu_selection == "Analisis Video Tunggal":
                         else:
                             df_loaded["Language"] = "id"
                             st.session_state.detected_lang = "id"
-                        if "Analysis Mode" in df_loaded.columns:
-                            st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
-                        else:
-                            df_loaded["Analysis Mode"] = "Konteks Global"
-                            st.session_state.analysis_mode = "Konteks Global"
+                            
+                        st.session_state.analysis_mode = "Dual Mode"
                         df_loaded.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
                         
                         st.session_state.df = df_loaded
@@ -1324,10 +2137,15 @@ if menu_selection == "Analisis Video Tunggal":
                         else:
                             st.session_state.lexicon_time = len(df_loaded) * 0.0015
                             
-                        if "LLM Time" in df_loaded.columns:
-                            st.session_state.llm_time = float(df_loaded["LLM Time"].dropna().iloc[0]) if len(df_loaded["LLM Time"].dropna()) > 0 else len(df_loaded) * 0.15
+                        if "LLM Time Global" in df_loaded.columns:
+                            st.session_state.llm_time_global = float(df_loaded["LLM Time Global"].dropna().iloc[0]) if len(df_loaded["LLM Time Global"].dropna()) > 0 else len(df_loaded) * 0.15
                         else:
-                            st.session_state.llm_time = len(df_loaded) * 0.15
+                            st.session_state.llm_time_global = len(df_loaded) * 0.15
+                            
+                        if "LLM Time Video" in df_loaded.columns:
+                            st.session_state.llm_time_video = float(df_loaded["LLM Time Video"].dropna().iloc[0]) if len(df_loaded["LLM Time Video"].dropna()) > 0 else len(df_loaded) * 0.15
+                        else:
+                            st.session_state.llm_time_video = len(df_loaded) * 0.15
                         st.rerun()
                     except Exception as e:
                         st.sidebar.error(f"Gagal memuat file riwayat: {e}")
@@ -1337,13 +2155,11 @@ if menu_selection == "Analisis Video Tunggal":
                         status.write("Langkah 1/5: Mengambil informasi video YouTube...")
                         video_title = get_video_title(url_input)
                         safe_title = make_safe_filename(video_title)
-                        history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
+                        history_filename = f"[{video_id}] {safe_title}.csv"
                         history_path = os.path.join(HISTORY_DIR, history_filename)
                         
-                        video_context = None
-                        if st.session_state.analysis_mode == "Konteks ke Video":
-                            status.write("   - Mengambil teks isi dan metadata video (konteks)...")
-                            video_context = get_video_context(url_input)
+                        status.write("   - Mengambil teks isi dan metadata video (konteks)...")
+                        video_context = get_video_context(url_input)
                         
                         # Language Detection
                         status.write("   - Mendeteksi bahasa konten video...")
@@ -1385,39 +2201,57 @@ if menu_selection == "Analisis Video Tunggal":
                                     status.write(f"   - Selesai memproses Lexicon: {idx + 1}/{len(comments)} komentar...")
                             st.session_state.lexicon_time = time.time() - start_lexicon_time
                             
-                            # 4. Analyze LLM
+                            # 4. Analyze LLM (Both Modes)
                             status.write(f"Langkah 4/5: Menghubungi NVIDIA NIM API ({model_input})...")
-                            start_llm_time = time.time()
                             llm_analyzer = LLMSentimentAnalyzer(model=model_input)
                             batch_size = 20
-                            llm_sentiment_map = {}
-                            llm_reason_map = {}
                             num_batches = (len(comments) - 1) // batch_size + 1
                             
+                            # Mode 1: Konteks Global
+                            status.write("   - Memproses Mode Konteks Global...")
+                            start_global_time = time.time()
+                            llm_sentiment_global = {}
+                            llm_reason_global = {}
                             try:
                                 for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
                                     batch = comments[i:i+batch_size]
-                                    status.write(f"   - Mengirim LLM Batch {batch_idx + 1}/{num_batches}...")
+                                    status.write(f"     [Global] Batch {batch_idx + 1}/{num_batches}...")
+                                    batch_results = llm_analyzer.analyze_batch(batch, video_context=None)
+                                    for r in batch_results:
+                                        llm_sentiment_global[r["comment_id"]] = r["llm_sentiment"]
+                                        llm_reason_global[r["comment_id"]] = r.get("llm_reason", "")
+                            except Exception as e:
+                                status.update(label="Gagal menghubungi API LLM (Konteks Global)!", state="error", expanded=True)
+                                st.error(f"Terjadi kesalahan saat menghubungi API NVIDIA NIM: {e}.")
+                                st.stop()
+                            st.session_state.llm_time_global = time.time() - start_global_time
+                            
+                            # Mode 2: Konteks ke Video
+                            status.write("   - Memproses Mode Konteks ke Video...")
+                            start_video_time = time.time()
+                            llm_sentiment_video = {}
+                            llm_reason_video = {}
+                            try:
+                                for batch_idx, i in enumerate(range(0, len(comments), batch_size)):
+                                    batch = comments[i:i+batch_size]
+                                    status.write(f"     [Video] Batch {batch_idx + 1}/{num_batches}...")
                                     batch_results = llm_analyzer.analyze_batch(batch, video_context=video_context)
                                     for r in batch_results:
-                                        llm_sentiment_map[r["comment_id"]] = r["llm_sentiment"]
-                                        llm_reason_map[r["comment_id"]] = r.get("llm_reason", "")
+                                        llm_sentiment_video[r["comment_id"]] = r["llm_sentiment"]
+                                        llm_reason_video[r["comment_id"]] = r.get("llm_reason", "")
                             except Exception as e:
-                                status.update(label="Gagal menghubungi API LLM!", state="error", expanded=True)
-                                st.error(f"Terjadi kesalahan saat menghubungi API NVIDIA NIM: {e}. Silakan periksa koneksi internet Anda atau coba beberapa saat lagi (Server API mungkin sedang mengalami kendala/rate limit).")
+                                status.update(label="Gagal menghubungi API LLM (Konteks ke Video)!", state="error", expanded=True)
+                                st.error(f"Terjadi kesalahan saat menghubungi API NVIDIA NIM: {e}.")
                                 st.stop()
+                            st.session_state.llm_time_video = time.time() - start_video_time
                             
                             # Obtain DeepSeek V4 Pro sentiments for Ground Truth
                             ds_sentiment_map = {}
                             if model_input == "deepseek-ai/deepseek-v4-pro":
-                                ds_sentiment_map = llm_sentiment_map
+                                ds_sentiment_map = llm_sentiment_video
                             else:
-                                # Jangan isi otomatis Ground Truth selama penarikan awal untuk menghemat API rate limit.
-                                # Pengisian Ground Truth akan dilakukan secara manual via panel Quick Labeling (Isi Otomatis).
                                 ds_sentiment_map = {}
-                            
-                            st.session_state.llm_time = time.time() - start_llm_time
-                            
+                                
                             # 5. Combine results and map existing ground truths
                             status.write("Langkah 5/5: Menyimpan berkas hasil...")
                             existing_gts = get_existing_ground_truths()
@@ -1439,14 +2273,16 @@ if menu_selection == "Analisis Video Tunggal":
                                     "Timestamp": c["time_parsed"],
                                     "Lexicon Sentiment": c["lexicon_sentiment"],
                                     "Lexicon Score": c["lexicon_score"],
-                                    "LLM Sentiment": llm_sentiment_map.get(cid, "netral"),
-                                    "LLM Reason": llm_reason_map.get(cid, ""),
+                                    "LLM Sentiment Global": llm_sentiment_global.get(cid, "netral"),
+                                    "LLM Reason Global": llm_reason_global.get(cid, ""),
+                                    "LLM Sentiment Video": llm_sentiment_video.get(cid, "netral"),
+                                    "LLM Reason Video": llm_reason_video.get(cid, ""),
                                     "LLM Model": model_input,
                                     "Language": c["language"],
-                                    "Analysis Mode": st.session_state.analysis_mode,
                                     "Ground Truth": gt,
                                     "Lexicon Time": st.session_state.lexicon_time,
-                                    "LLM Time": st.session_state.llm_time
+                                    "LLM Time Global": st.session_state.llm_time_global,
+                                    "LLM Time Video": st.session_state.llm_time_video
                                 })
                                 
                             df = pd.DataFrame(final_data)
@@ -1633,13 +2469,6 @@ if menu_selection == "Analisis Perbandingan Global":
     st.markdown("Halaman analisis akumulatif yang menggabungkan seluruh atau sebagian riwayat video untuk perbandingan akurasi jangka panjang.")
     st.markdown("---")
     
-    # Filter Mode Analisis
-    filter_mode = st.selectbox(
-        ":material/filter_list: Filter Riwayat Berdasarkan Mode Analisis Sentimen",
-        options=["Semua Mode", "Hanya Konteks Global", "Hanya Konteks ke Video"],
-        help="Saring video riwayat yang ditampilkan berdasarkan mode analisis yang digunakan."
-    )
-    
     # 1. Bangun dictionary riwayat (gabungan Lokal + Google Sheets)
     history_videos = {}
     
@@ -1663,7 +2492,7 @@ if menu_selection == "Analisis Perbandingan Global":
                 grouped = df_gs.groupby(["Video ID", "Video Title"])
                 for (vid_id, vid_title), group_df in grouped:
                     display_name = f"[{vid_id}] {make_safe_filename(vid_title)}"
-                    local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Reason", "LLM Model", "Language", "Analysis Mode", "Ground Truth"]
+                    local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment Global", "LLM Reason Global", "LLM Sentiment Video", "LLM Reason Video", "LLM Model", "Language", "Ground Truth", "Lexicon Time", "LLM Time Global", "LLM Time Video"]
                     df_temp = group_df.copy()
                     df_temp["No"] = range(1, len(df_temp) + 1)
                     # Filter existing columns to match local format
@@ -1672,23 +2501,6 @@ if menu_selection == "Analisis Perbandingan Global":
         except Exception:
             pass
             
-    # Saring riwayat berdasarkan filter_mode
-    filtered_history_videos = {}
-    for key, df_vid in history_videos.items():
-        mode_val = "Konteks Global"
-        if "Analysis Mode" in df_vid.columns and len(df_vid) > 0:
-            mode_val = str(df_vid["Analysis Mode"].iloc[0])
-            if pd.isna(df_vid["Analysis Mode"].iloc[0]) or not mode_val.strip():
-                mode_val = "Konteks Global"
-        
-        if filter_mode == "Semua Mode":
-            filtered_history_videos[key] = df_vid
-        elif filter_mode == "Hanya Konteks Global" and mode_val == "Konteks Global":
-            filtered_history_videos[key] = df_vid
-        elif filter_mode == "Hanya Konteks ke Video" and mode_val == "Konteks ke Video":
-            filtered_history_videos[key] = df_vid
-    
-    history_videos = filtered_history_videos
     history_keys = sorted(list(history_videos.keys()), reverse=True)
     
     # Inisialisasi daftar file aktif di session state
@@ -1699,7 +2511,7 @@ if menu_selection == "Analisis Perbandingan Global":
     st.session_state.active_global_files = [f for f in st.session_state.active_global_files if f in history_keys]
     
     # Tampilkan expander filter video di halaman utama
-    with st.expander(":material/settings: Filter Pilihan Video (Toggle Aktivasi)", expanded=True):
+    with st.expander("⚙️ Filter Pilihan Video (Toggle Aktivasi)", expanded=True):
         st.markdown("<small>Pilih video riwayat yang ingin Anda sertakan dalam analisis dan grafik perbandingan global:</small>", unsafe_allow_html=True)
         
         # Tombol pintasan Cepat
@@ -1731,7 +2543,7 @@ if menu_selection == "Analisis Perbandingan Global":
                 is_checked = h_key in st.session_state.active_global_files
                 
                 with cols[col_idx]:
-                    checked = st.checkbox(f":material/movie: {display_name}", value=is_checked, key=f"chk_glob_{h_key}")
+                    checked = st.checkbox(f"🎥 {display_name}", value=is_checked, key=f"chk_glob_{h_key}")
                     if checked:
                         selected_global_files.append(h_key)
             
@@ -1748,27 +2560,27 @@ if menu_selection == "Analisis Perbandingan Global":
         for h_key in selected_global_files:
             try:
                 df_temp = history_videos[h_key]
+                df_temp = upgrade_dataframe_schema(df_temp)
+                
                 clean_name = h_key
                 match = re.match(r"^\[(.*?)\] (.*)$", clean_name)
                 vid_title = match.group(2) if match else clean_name
-                # Ensure necessary columns exist
-                for col in ["Ground Truth", "Lexicon Sentiment", "LLM Sentiment", "LLM Model", "Analysis Mode"]:
-                    if col not in df_temp.columns:
-                        df_temp[col] = None
                 
                 df_temp["Video Title"] = vid_title
                 dfs.append(df_temp)
                 
-                # Calculate accuracy for this video individually (only if Ground Truth is filled)
+                # Calculate accuracy for this video individually
                 df_eval_temp = df_temp.dropna(subset=["Ground Truth"]).copy()
                 df_eval_temp = df_eval_temp[df_eval_temp["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
                 if len(df_eval_temp) > 0:
                     y_true_temp = df_eval_temp["Ground Truth"].str.strip().str.lower()
                     y_lexicon_temp = df_eval_temp["Lexicon Sentiment"].str.strip().str.lower()
-                    y_llm_temp = df_eval_temp["LLM Sentiment"].str.strip().str.lower()
+                    y_llm_g_temp = df_eval_temp["LLM Sentiment Global"].str.strip().str.lower()
+                    y_llm_v_temp = df_eval_temp["LLM Sentiment Video"].str.strip().str.lower()
                     
                     lex_acc_temp = accuracy_score(y_true_temp, y_lexicon_temp)
-                    llm_acc_temp = accuracy_score(y_true_temp, y_llm_temp)
+                    llm_g_acc_temp = accuracy_score(y_true_temp, y_llm_g_temp)
+                    llm_v_acc_temp = accuracy_score(y_true_temp, y_llm_v_temp)
                     
                     model_temp = "meta/llama-3.1-8b-instruct"
                     if "LLM Model" in df_temp.columns and df_temp["LLM Model"].iloc[0] is not None:
@@ -1778,7 +2590,8 @@ if menu_selection == "Analisis Perbandingan Global":
                     video_accuracies.append({
                         "Video": vid_title[:30] + "..." if len(vid_title) > 30 else vid_title,
                         "Lexicon Accuracy": lex_acc_temp * 100,
-                        "LLM Accuracy": llm_acc_temp * 100,
+                        "LLM Global Accuracy": llm_g_acc_temp * 100,
+                        "LLM Video Accuracy": llm_v_acc_temp * 100,
                         "LLM Model": model_short
                     })
             except Exception as e:
@@ -1818,21 +2631,24 @@ if menu_selection == "Analisis Perbandingan Global":
                     unsafe_allow_html=True
                 )
             with col_kpi3:
-                # Display average accuracies if eval data is present
                 if total_eval > 0:
                     y_true_g = df_global_eval["Ground Truth"].str.strip().str.lower()
                     y_lex_g = df_global_eval["Lexicon Sentiment"].str.strip().str.lower()
-                    y_llm_g = df_global_eval["LLM Sentiment"].str.strip().str.lower()
+                    y_llm_g = df_global_eval["LLM Sentiment Global"].str.strip().str.lower()
+                    y_llm_v = df_global_eval["LLM Sentiment Video"].str.strip().str.lower()
                     
                     global_lex_acc = accuracy_score(y_true_g, y_lex_g) * 100
-                    global_llm_acc = accuracy_score(y_true_g, y_llm_g) * 100
+                    global_llm_g_acc = accuracy_score(y_true_g, y_llm_g) * 100
+                    global_llm_v_acc = accuracy_score(y_true_g, y_llm_v) * 100
+                    
                     st.markdown(
                        f"""
                        <div class="metric-card">
                            <div class="metric-title">Rata-rata Akurasi Global</div>
-                           <div class="metric-value" style="font-size: 1.5rem; font-weight: 700; color: #1e293b;">
+                           <div class="metric-value" style="font-size: 1.25rem; font-weight: 700; color: #1e293b; line-height: 1.4;">
                                Lexicon: {global_lex_acc:.1f}%<br/>
-                               LLM: {global_llm_acc:.1f}%
+                               LLM Global: {global_llm_g_acc:.1f}%<br/>
+                               LLM Video: {global_llm_v_acc:.1f}%
                            </div>
                        </div>
                        """,
@@ -1854,18 +2670,15 @@ if menu_selection == "Analisis Perbandingan Global":
                 st.warning("Belum ada data Ground Truth yang diisi di seluruh video yang dipilih. Metrik komparasi tidak dapat ditampilkan.")
             else:
                 # Plot global donut charts
-                st.subheader(":material/pie_chart: Sebaran Sentimen Akumulatif")
+                st.subheader("📊 Sebaran Sentimen Akumulatif")
                 
                 y_true_g = df_global_eval["Ground Truth"].str.strip().str.lower()
                 y_lex_g = df_global_eval["Lexicon Sentiment"].str.strip().str.lower()
-                y_llm_g = df_global_eval["LLM Sentiment"].str.strip().str.lower()
+                y_llm_g = df_global_eval["LLM Sentiment Global"].str.strip().str.lower()
+                y_llm_v = df_global_eval["LLM Sentiment Video"].str.strip().str.lower()
                 
                 sentiment_labels = ["positif", "negatif", "netral"]
-                color_map = {
-                    "positif": "#2ecc71",
-                    "negatif": "#e74c3c",
-                    "netral": "#95a5a6"
-                }
+                color_map = {"positif": "#2ecc71", "negatif": "#e74c3c", "netral": "#95a5a6"}
                 
                 def get_sizes_and_colors(series):
                     counts = series.value_counts()
@@ -1882,37 +2695,49 @@ if menu_selection == "Analisis Perbandingan Global":
                     
                 gt_sizes, gt_colors, gt_labels = get_sizes_and_colors(y_true_g)
                 lex_sizes, lex_colors, lex_labels = get_sizes_and_colors(y_lex_g)
-                llm_sizes, llm_colors, llm_labels = get_sizes_and_colors(y_llm_g)
+                llm_g_sizes, llm_g_colors, llm_g_labels = get_sizes_and_colors(y_llm_g)
+                llm_v_sizes, llm_v_colors, llm_v_labels = get_sizes_and_colors(y_llm_v)
                 
-                fig_donut_g, (ax_g1, ax_g2, ax_g3) = plt.subplots(1, 3, figsize=(18, 6))
+                fig_donut_g, axs = plt.subplots(1, 4, figsize=(22, 6))
                 
+                # Donut 1: GT
                 if gt_sizes:
-                    ax_g1.pie(gt_sizes, labels=gt_labels, autopct='%1.1f%%', startangle=90, colors=gt_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
-                    ax_g1.add_artist(plt.Circle((0,0), 0.50, fc='white'))
-                    ax_g1.set_title("Global Ground Truth", fontsize=12, weight="bold")
+                    axs[0].pie(gt_sizes, labels=gt_labels, autopct='%1.1f%%', startangle=90, colors=gt_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+                    axs[0].add_artist(plt.Circle((0,0), 0.50, fc='white'))
+                    axs[0].set_title("Global Ground Truth", fontsize=12, weight="bold")
                 else:
-                    ax_g1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+                    axs[0].text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
                     
+                # Donut 2: Lexicon
                 if lex_sizes:
-                    ax_g2.pie(lex_sizes, labels=lex_labels, autopct='%1.1f%%', startangle=90, colors=lex_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
-                    ax_g2.add_artist(plt.Circle((0,0), 0.50, fc='white'))
-                    ax_g2.set_title("Global Lexicon-based", fontsize=12, weight="bold")
+                    axs[1].pie(lex_sizes, labels=lex_labels, autopct='%1.1f%%', startangle=90, colors=lex_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+                    axs[1].add_artist(plt.Circle((0,0), 0.50, fc='white'))
+                    axs[1].set_title("Global Lexicon-based", fontsize=12, weight="bold")
                 else:
-                    ax_g2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+                    axs[1].text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
                     
-                if llm_sizes:
-                    ax_g3.pie(llm_sizes, labels=llm_labels, autopct='%1.1f%%', startangle=90, colors=llm_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
-                    ax_g3.add_artist(plt.Circle((0,0), 0.50, fc='white'))
-                    ax_g3.set_title("Global LLM-based", fontsize=12, weight="bold")
+                # Donut 3: LLM Global
+                if llm_g_sizes:
+                    axs[2].pie(llm_g_sizes, labels=llm_g_labels, autopct='%1.1f%%', startangle=90, colors=llm_g_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+                    axs[2].add_artist(plt.Circle((0,0), 0.50, fc='white'))
+                    axs[2].set_title("Global LLM Konteks Global", fontsize=12, weight="bold")
                 else:
-                    ax_g3.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+                    axs[2].text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
+                    
+                # Donut 4: LLM Video
+                if llm_v_sizes:
+                    axs[3].pie(llm_v_sizes, labels=llm_v_labels, autopct='%1.1f%%', startangle=90, colors=llm_v_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
+                    axs[3].add_artist(plt.Circle((0,0), 0.50, fc='white'))
+                    axs[3].set_title("Global LLM Konteks Video", fontsize=12, weight="bold")
+                else:
+                    axs[3].text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
                     
                 plt.tight_layout()
                 st.pyplot(fig_donut_g)
                 plt.close()
                 
-                # Global metrics and individual video comparison
-                tab_glob1, tab_glob2 = st.tabs([":material/bar_chart: Global Metrics Comparison", ":material/analytics: Per Video Accuracy Comparison"])
+                # Tabs
+                tab_glob1, tab_glob2 = st.tabs(["📊 Global Metrics Comparison", "📈 Per Video Accuracy Comparison"])
                 
                 with tab_glob1:
                     st.markdown("### Perbandingan Metrik Evaluasi Akumulatif (Global)")
@@ -1920,39 +2745,43 @@ if menu_selection == "Analisis Perbandingan Global":
                     global_lex_acc = accuracy_score(y_true_g, y_lex_g)
                     global_lex_prec, global_lex_rec, global_lex_f1, _ = precision_recall_fscore_support(y_true_g, y_lex_g, average='macro', zero_division=0)
                     
-                    global_llm_acc = accuracy_score(y_true_g, y_llm_g)
-                    global_llm_prec, global_llm_rec, global_llm_f1, _ = precision_recall_fscore_support(y_true_g, y_llm_g, average='macro', zero_division=0)
+                    global_llm_g_acc = accuracy_score(y_true_g, y_llm_g)
+                    global_llm_g_prec, global_llm_g_rec, global_llm_g_f1, _ = precision_recall_fscore_support(y_true_g, y_llm_g, average='macro', zero_division=0)
                     
-                    metrics_g = ['Akurasi', 'Presisi', 'Sensitivitas (Recall)', 'F1-Score']
+                    global_llm_v_acc = accuracy_score(y_true_g, y_llm_v)
+                    global_llm_v_prec, global_llm_v_rec, global_llm_v_f1, _ = precision_recall_fscore_support(y_true_g, y_llm_v, average='macro', zero_division=0)
+                    
+                    metrics_g = ['Akurasi', 'Presisi', 'Recall', 'F1-Score']
                     lex_scores_g = [global_lex_acc * 100, global_lex_prec * 100, global_lex_rec * 100, global_lex_f1 * 100]
-                    llm_scores_g = [global_llm_acc * 100, global_llm_prec * 100, global_llm_rec * 100, global_llm_f1 * 100]
+                    llm_g_scores_g = [global_llm_g_acc * 100, global_llm_g_prec * 100, global_llm_g_rec * 100, global_llm_g_f1 * 100]
+                    llm_v_scores_g = [global_llm_v_acc * 100, global_llm_v_prec * 100, global_llm_v_rec * 100, global_llm_v_f1 * 100]
                     
                     x_g = np.arange(len(metrics_g))
-                    width_g = 0.35
+                    width_g = 0.25
                     
-                    fig_metrics_g, ax_mg = plt.subplots(figsize=(10, 5))
-                    rects_g1 = ax_mg.bar(x_g - width_g/2, lex_scores_g, width_g, label='Lexicon-based', color='#3498db')
-                    rects_g2 = ax_mg.bar(x_g + width_g/2, llm_scores_g, width_g, label='LLM-based (NVIDIA NIM)', color='#2ecc71')
+                    fig_metrics_g, ax_mg = plt.subplots(figsize=(12, 5))
+                    rects_g1 = ax_mg.bar(x_g - width_g, lex_scores_g, width_g, label='Lexicon-Based', color='#3498db')
+                    rects_g2 = ax_mg.bar(x_g, llm_g_scores_g, width_g, label='LLM Konteks Global', color='#e67e22')
+                    rects_g3 = ax_mg.bar(x_g + width_g, llm_v_scores_g, width_g, label='LLM Konteks ke Video', color='#2ecc71')
                     
                     ax_mg.set_ylabel('Skor (%)', weight="bold")
-                    ax_mg.set_title('Perbandingan Metrik Akurasi Akumulatif (Global)', weight="bold", fontsize=12)
+                    ax_mg.set_title('Perbandingan Metrik Evaluasi Akumulatif (Global)', weight="bold", fontsize=12)
                     ax_mg.set_xticks(x_g)
                     ax_mg.set_xticklabels(metrics_g, weight="bold")
-                    ax_mg.set_ylim(0, 110)
+                    ax_mg.set_ylim(0, 115)
                     ax_mg.legend()
                     
-                    # Autolabel
                     def autolabel_g(rects):
                         for rect in rects:
                             height = rect.get_height()
-                           # Keep a clean presentation
                             ax_mg.annotate(f'{height:.1f}%',
                                         xy=(rect.get_x() + rect.get_width() / 2, height),
                                         xytext=(0, 3),
                                         textcoords="offset points",
-                                        ha='center', va='bottom', weight="bold", fontsize=9)
+                                        ha='center', va='bottom', weight="bold", fontsize=8)
                     autolabel_g(rects_g1)
                     autolabel_g(rects_g2)
+                    autolabel_g(rects_g3)
                     
                     plt.tight_layout()
                     st.pyplot(fig_metrics_g)
@@ -1963,19 +2792,17 @@ if menu_selection == "Analisis Perbandingan Global":
                         st.markdown("### Perbandingan Akurasi antara Lexicon dan LLM untuk Setiap Video")
                         df_vid_acc = pd.DataFrame(video_accuracies)
                         
-                        # Plot a line or grouped bar chart comparing accuracies
                         fig_line, ax_l = plt.subplots(figsize=(12, 5))
                         x_indices = np.arange(len(df_vid_acc))
                         
-                        # We draw lines
                         ax_l.plot(x_indices, df_vid_acc["Lexicon Accuracy"], marker='o', linewidth=2, color='#3498db', label='Lexicon Accuracy')
-                        ax_l.plot(x_indices, df_vid_acc["LLM Accuracy"], marker='s', linewidth=2, color='#2ecc71', label='LLM Accuracy')
+                        ax_l.plot(x_indices, df_vid_acc["LLM Global Accuracy"], marker='^', linewidth=2, color='#e67e22', label='LLM Global Accuracy')
+                        ax_l.plot(x_indices, df_vid_acc["LLM Video Accuracy"], marker='s', linewidth=2, color='#2ecc71', label='LLM Video Accuracy')
                         
-                        # Add value labels
-                        for i, val in enumerate(df_vid_acc["Lexicon Accuracy"]):
-                            ax_l.annotate(f'{val:.1f}%', (x_indices[i], val), textcoords="offset points", xytext=(0,10), ha='center', color='#1e3a8a', weight="bold")
-                        for i, val in enumerate(df_vid_acc["LLM Accuracy"]):
-                            ax_l.annotate(f'{val:.1f}%', (x_indices[i], val), textcoords="offset points", xytext=(0,-15), ha='center', color='#166534', weight="bold")
+                        for i in range(len(df_vid_acc)):
+                            ax_l.annotate(f'{df_vid_acc["Lexicon Accuracy"].iloc[i]:.1f}%', (x_indices[i], df_vid_acc["Lexicon Accuracy"].iloc[i]), textcoords="offset points", xytext=(0,10), ha='center', color='#1e3a8a', weight="bold", fontsize=8)
+                            ax_l.annotate(f'{df_vid_acc["LLM Global Accuracy"].iloc[i]:.1f}%', (x_indices[i], df_vid_acc["LLM Global Accuracy"].iloc[i]), textcoords="offset points", xytext=(0,10), ha='center', color='#d35400', weight="bold", fontsize=8)
+                            ax_l.annotate(f'{df_vid_acc["LLM Video Accuracy"].iloc[i]:.1f}%', (x_indices[i], df_vid_acc["LLM Video Accuracy"].iloc[i]), textcoords="offset points", xytext=(0,-15), ha='center', color='#166534', weight="bold", fontsize=8)
                             
                         ax_l.set_xticks(x_indices)
                         ax_l.set_xticklabels(df_vid_acc["Video"], rotation=30, ha='right', weight="bold", fontsize=9)
@@ -1995,7 +2822,8 @@ if menu_selection == "Analisis Perbandingan Global":
                             column_config={
                                 "Video": st.column_config.TextColumn("Judul Video", width="large"),
                                 "Lexicon Accuracy": st.column_config.NumberColumn("Akurasi Lexicon", format="%.2f%%"),
-                                "LLM Accuracy": st.column_config.NumberColumn("Akurasi LLM", format="%.2f%%"),
+                                "LLM Global Accuracy": st.column_config.NumberColumn("Akurasi LLM Global", format="%.2f%%"),
+                                "LLM Video Accuracy": st.column_config.NumberColumn("Akurasi LLM Video", format="%.2f%%"),
                                 "LLM Model": st.column_config.TextColumn("Model LLM yang Digunakan")
                             },
                             use_container_width=True,
@@ -2004,7 +2832,6 @@ if menu_selection == "Analisis Perbandingan Global":
                     else:
                         st.info("Belum ada video dengan Ground Truth terisi untuk dibandingkan.")
     st.stop()
-
 # Main Dashboard Area (SEMANTIKA)
 st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Sentiment Analysis Dashboard</h1>", unsafe_allow_html=True)
 if APP_MODE == "production":
@@ -2054,820 +2881,144 @@ if st.session_state.df is not None:
             lang_label = "Inggris (EN)" if st.session_state.detected_lang == "en" else "Indonesia (ID)"
         st.markdown(f":material/translate: **Bahasa Terdeteksi:** `{lang_label}`")
     with col_hdr4:
-        st.markdown(f":material/settings: **Mode Analisis:** `{st.session_state.analysis_mode}`")
+        st.markdown(f":material/settings: **Mode Analisis:** `Dual Mode (Global & Video)`")
     
     st.markdown("---")
     
-    if st.session_state.analysis_mode == "Konteks ke Video":
-        # Check if video_context in session_state, else try to fetch
-        if "video_context" not in st.session_state or st.session_state.video_context is None:
-            if st.session_state.video_url:
-                try:
-                    with st.spinner("Mengambil transkrip/konteks video dari YouTube..."):
-                        st.session_state.video_context = get_video_context(st.session_state.video_url)
-                except Exception:
-                    st.session_state.video_context = "Gagal mengambil transkrip/konteks video."
-            else:
-                st.session_state.video_context = "Teks transkrip/konteks video tidak tersedia untuk riwayat ini."
-
-        with st.expander(":material/movie: Lihat Metadata & Transkrip Subtitel Video (Konteks)", expanded=False):
-            st.markdown("Informasi berikut diekstraksi secara otomatis dari YouTube untuk mencocokkan emosi dan relevansi komentar:")
-            if st.session_state.video_context:
-                st.text_area("Konteks Video (Title, Description, Transcript):", value=st.session_state.video_context, height=250, disabled=True)
-            else:
-                st.info("Konteks video tidak tersedia.")
+    # Root Tabs
+    tab_global, tab_video, tab_compare = st.tabs([
+        "🌐 Mode Konteks Global",
+        "🎥 Mode Konteks ke Video",
+        "📊 Perbandingan Performa"
+    ])
     
-    # Hitung statistik kesepakatan model untuk fitur pengisian cepat
-    df_temp = st.session_state.df
-    agree_mask = df_temp["Lexicon Sentiment"] == df_temp["LLM Sentiment"]
-    total_comments = len(df_temp)
-    agreed_comments = agree_mask.sum()
-    pct_agreement = (agreed_comments / total_comments * 100) if total_comments > 0 else 0
-    
-    empty_gt_mask = df_temp["Ground Truth"].isna() | (df_temp["Ground Truth"].astype(str).str.strip() == "")
-    fillable_count = empty_gt_mask.sum()
-
-    # Layout penyaring dan aksi cepat
-    col_filter, col_actions = st.columns([3, 2])
-    with col_filter:
-        show_mismatch = st.checkbox(":material/compare: Hanya tampilkan data Mismatch (Lexicon vs LLM berbeda)", value=False, key="filter_mismatch")
-        st.markdown(f"Tingkat kesepakatan model (Lexicon & LLM sama): **{pct_agreement:.1f}%** ({agreed_comments}/{total_comments} komentar)")
-        sort_by = st.selectbox(
-            ":material/sort: Urutkan Komentar",
-            options=["Bawaan (YouTube)", "Likes Terbanyak", "Waktu Terbaru"],
-            key="comment_sort_select",
-            help="Urutkan komentar pada tabel."
-        )
-    with col_actions:
-        with st.expander(":material/construction: Fitur Pengisian Cepat (Quick Labeling)"):
-            st.write(f"Komentar yang bisa diisi otomatis (kosong): **{fillable_count}**")
-            btn_col1, btn_col2 = st.columns(2)
-            with btn_col1:
-                if st.button("Isi Otomatis", use_container_width=True, help="Mengisi Ground Truth kosong dengan hasil prediksi DeepSeek V4 Pro"):
-                    if fillable_count > 0:
-                        with st.status("Mengisi Ground Truth menggunakan DeepSeek V4 Pro...", expanded=True) as status:
-                            # Check if active model is already deepseek-v4-pro
-                            if st.session_state.llm_model == "deepseek-ai/deepseek-v4-pro":
-                                status.write("Menyalin hasil analisis dari model LLM aktif...")
-                                st.session_state.df.loc[empty_gt_mask, "Ground Truth"] = st.session_state.df.loc[empty_gt_mask, "LLM Sentiment"]
-                            else:
-                                # Fetch on the fly
-                                rows_to_fill = st.session_state.df[empty_gt_mask]
-                                comments_to_analyze = []
-                                for idx, row in rows_to_fill.iterrows():
-                                    comments_to_analyze.append({
-                                        "comment_id": row["Comment ID"],
-                                        "text": row["Original Comment"]
-                                    })
-                                
-                                video_context = None
-                                if st.session_state.analysis_mode == "Konteks ke Video" and st.session_state.video_url:
-                                    status.write("Mengambil teks isi dan metadata video (konteks)...")
-                                    video_context = get_video_context(st.session_state.video_url)
-                                
-                                status.write(f"Menganalisis {len(comments_to_analyze)} komentar dengan DeepSeek V4 Pro...")
-                                try:
-                                    ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
-                                    ds_results = []
-                                    batch_size = 20
-                                    num_batches = (len(comments_to_analyze) - 1) // batch_size + 1
-                                    
-                                    for i in range(0, len(comments_to_analyze), batch_size):
-                                        batch_idx = i // batch_size
-                                        batch = comments_to_analyze[i:i+batch_size]
-                                        status.write(f"   - Memproses Batch {batch_idx + 1}/{num_batches}...")
-                                        batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
-                                        ds_results.extend(batch_results)
-                                except Exception as e:
-                                    status.write("⚠️ Gagal menghubungi DeepSeek V4 Pro. Mencoba fallback ke DeepSeek V4 Flash...")
-                                    try:
-                                        fallback_model = "deepseek-ai/deepseek-v4-flash"
-                                        if st.session_state.llm_model == "deepseek-ai/deepseek-v4-pro":
-                                            fallback_model = "deepseek-ai/deepseek-v4-flash"
-                                        else:
-                                            fallback_model = st.session_state.llm_model
-                                            
-                                        status.write(f"Menganalisis dengan model alternatif: {fallback_model}...")
-                                        ds_analyzer = LLMSentimentAnalyzer(model=fallback_model)
-                                        ds_results = []
-                                        for i in range(0, len(comments_to_analyze), batch_size):
-                                            batch_idx = i // batch_size
-                                            batch = comments_to_analyze[i:i+batch_size]
-                                            status.write(f"   - Memproses Batch {batch_idx + 1}/{num_batches} (Fallback)...")
-                                            batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
-                                            ds_results.extend(batch_results)
-                                    except Exception as e_fallback:
-                                        status.update(label="Gagal memproses Ground Truth!", state="error", expanded=True)
-                                        st.error(f"Gagal memproses pengisian otomatis bahkan setelah mencoba fallback: {e_fallback}. Silakan periksa koneksi internet atau API Key Anda.")
-                                        st.stop()
-                                
-                                status.write("Memetakan hasil prediksi ke tabel...")
-                                for r in ds_results:
-                                    cid = r["comment_id"]
-                                    sentiment = r["llm_sentiment"]
-                                    st.session_state.df.loc[st.session_state.df["Comment ID"] == cid, "Ground Truth"] = sentiment
-
-                            status.write("Menyimpan hasil ke disk lokal...")
-                            st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
-                            
-                            # Sync dengan riwayat lokal & GSheets
-                            video_id = extract_video_id(st.session_state.video_url)
-                            if video_id:
-                                safe_title = make_safe_filename(st.session_state.video_title)
-                                history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
-                                history_path = os.path.join(HISTORY_DIR, history_filename)
-                                st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
-                                if APP_MODE == "production":
-                                    status.write("Menyinkronkan data dengan Google Sheets Cloud...")
-                                    sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
-                            
-                            status.update(label="Selesai mengisi Ground Truth!", state="complete", expanded=False)
-                            
-                        st.success(f"Berhasil mengisi {fillable_count} komentar!")
-                        st.rerun()
-                    else:
-                        st.info("Tidak ada data Ground Truth yang kosong.")
-            with btn_col2:
-                if st.button("Kosongkan GT", use_container_width=True, help="Menghapus semua label Ground Truth untuk memulai dari awal"):
-                    st.session_state.df["Ground Truth"] = ""
-                    st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
-                    
-                    # Sync dengan riwayat lokal & GSheets
-                    video_id = extract_video_id(st.session_state.video_url)
-                    if video_id:
-                        safe_title = make_safe_filename(st.session_state.video_title)
-                        history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
-                        history_path = os.path.join(HISTORY_DIR, history_filename)
-                        st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
-                        if APP_MODE == "production":
-                            sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
-                    
-                    st.success("Ground Truth dikosongkan!")
-                    st.rerun()
-
-    tab_view, tab_edit = st.tabs([":material/visibility: Tampilan Tabel Berwarna", ":material/edit: Edit Ground Truth"])
-    
-    display_df = st.session_state.df.copy()
-    
-    # Terapkan pengurutan
-    if sort_by == "Likes Terbanyak" and "Likes" in display_df.columns:
-        display_df["Likes"] = pd.to_numeric(display_df["Likes"], errors='coerce').fillna(0).astype(int)
-        display_df = display_df.sort_values(by="Likes", ascending=False)
-    elif sort_by == "Waktu Terbaru" and "Timestamp" in display_df.columns:
-        display_df["Timestamp"] = pd.to_numeric(display_df["Timestamp"], errors='coerce').fillna(0)
-        display_df = display_df.sort_values(by="Timestamp", ascending=False)
+    with tab_global:
+        render_mode_tab_content("global", "LLM Sentiment Global", "LLM Reason Global", "Konteks Global")
         
-    if show_mismatch:
-        display_df = display_df[display_df["Lexicon Sentiment"] != display_df["LLM Sentiment"]]
-    
-    with tab_view:
-        def style_table_row(row):
-            styles = pd.Series("", index=row.index)
-            
-            def get_color(val):
-                val_lower = str(val).strip().lower()
-                if val_lower == "positif":
-                    return "background-color: #C6EFCE; color: #006100; font-weight: bold;"
-                elif val_lower == "negatif":
-                    return "background-color: #FFC7CE; color: #9C0006; font-weight: bold;"
-                elif val_lower == "netral":
-                    return "background-color: #E2E3E5; color: #383D41;"
-                return ""
-            
-            lex = row.get("Lexicon Sentiment")
-            llm = row.get("LLM Sentiment")
-            gt = row.get("Ground Truth")
-            
-            if "Lexicon Sentiment" in row.index:
-                styles["Lexicon Sentiment"] = get_color(lex)
-            if "LLM Sentiment" in row.index:
-                styles["LLM Sentiment"] = get_color(llm)
-            if "Ground Truth" in row.index:
-                if str(lex).strip().lower() != str(llm).strip().lower():
-                    styles["Ground Truth"] = "background-color: #FFE699; color: #7F6000; font-weight: bold;"
-                else:
-                    styles["Ground Truth"] = get_color(gt)
-                    
-            return styles
-            
-        styled_df = display_df.style.apply(style_table_row, axis=1)
-            
-        st.dataframe(
-            styled_df,
-            column_config={
-                "No": st.column_config.NumberColumn("No", width="small"),
-                "Author": st.column_config.TextColumn("Penulis", width="medium"),
-                "Original Comment": st.column_config.TextColumn("Komentar Asli", width="large"),
-                "Cleaned Comment": st.column_config.TextColumn("Komentar Bersih (Stemmed)", width="medium"),
-                "Likes": st.column_config.NumberColumn("Likes", width="small"),
-                "Time Description": st.column_config.TextColumn("Waktu", width="small"),
-                "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small"),
-                "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small"),
-                "LLM Reason": st.column_config.TextColumn("Alasan LLM", width="medium"),
-                "Ground Truth": st.column_config.TextColumn("Ground Truth", width="small"),
-            },
-            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "LLM Reason", "Ground Truth"],
-            use_container_width=True,
-            hide_index=True
-        )
+    with tab_video:
+        render_mode_tab_content("video", "LLM Sentiment Video", "LLM Reason Video", "Konteks ke Video")
         
-    with tab_edit:
-        st.info("Gunakan tabel di bawah ini untuk menentukan sentimen sebenarnya (Ground Truth) lewat dropdown pilihan.", icon=":material/info:")
-        edited_df = st.data_editor(
-            display_df,
-            column_config={
-                "Ground Truth": st.column_config.SelectboxColumn(
-                    "Ground Truth",
-                    help="Sentimen sebenarnya yang ditentukan oleh Anda",
-                    options=["positif", "negatif", "netral", ""],
-                    required=False
-                ),
-                "No": st.column_config.NumberColumn("No", width="small", disabled=True),
-                "Author": st.column_config.TextColumn("Penulis", width="medium", disabled=True),
-                "Original Comment": st.column_config.TextColumn("Komentar Asli", width="large", disabled=True),
-                "Cleaned Comment": st.column_config.TextColumn("Komentar Bersih (Stemmed)", width="medium", disabled=True),
-                "Likes": st.column_config.NumberColumn("Likes", width="small", disabled=True),
-                "Time Description": st.column_config.TextColumn("Waktu", width="small", disabled=True),
-                "Lexicon Sentiment": st.column_config.TextColumn("Sentimen Lexicon", width="small", disabled=True),
-                "LLM Sentiment": st.column_config.TextColumn("Sentimen LLM", width="small", disabled=True),
-                "LLM Reason": st.column_config.TextColumn("Alasan LLM", width="medium", disabled=True),
-            },
-            column_order=["No", "Author", "Original Comment", "Cleaned Comment", "Likes", "Time Description", "Lexicon Sentiment", "LLM Sentiment", "LLM Reason", "Ground Truth"],
-            use_container_width=True,
-            key="data_editor",
-            num_rows="fixed"
-        )
-    
-    # Auto-save changes safely by comparing edited_df to display_df, preventing loss of unrendered rows due to filtering
-    if not edited_df.equals(display_df):
-        st.session_state.df.loc[edited_df.index, "Ground Truth"] = edited_df["Ground Truth"]
-        st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+    with tab_compare:
+        st.markdown("### Perbandingan Performa: Konteks Global vs Konteks ke Video")
         
-        # Sync dengan riwayat lokal & GSheets
-        video_id = extract_video_id(st.session_state.video_url)
-        if video_id:
-            safe_title = make_safe_filename(st.session_state.video_title)
-            history_filename = f"[{video_id}] [{st.session_state.analysis_mode}] {safe_title}.csv"
-            history_path = os.path.join(HISTORY_DIR, history_filename)
-            st.session_state.df.to_csv(history_path, index=False, encoding="utf-8-sig")
-            
-            if APP_MODE == "production":
-                sync_video_to_gsheets(video_id, st.session_state.video_title, st.session_state.video_url, st.session_state.df)
-            
-        st.rerun()
-
-    # Download Button Section
-    st.markdown(" ")
-    col_dl1, col_dl2, col_dl3 = st.columns(3)
-    with col_dl1:
-        # Generate styled Excel file
-        excel_data = convert_df_to_excel(st.session_state.df, st.session_state.video_title, st.session_state.video_url)
-        st.download_button(
-            label=":material/download: Ekspor Excel (.xlsx)",
-            data=excel_data,
-            file_name=f"semantika_hasil_{extract_video_id(st.session_state.video_url)}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
-    with col_dl2:
-        # Generate landscape PDF report
-        pdf_data = convert_df_to_pdf(st.session_state.df, st.session_state.video_title, st.session_state.video_url)
-        st.download_button(
-            label=":material/download: Ekspor PDF (.pdf)",
-            data=pdf_data,
-            file_name=f"semantika_hasil_{extract_video_id(st.session_state.video_url)}.pdf",
-            mime="application/pdf",
-            use_container_width=True
-        )
-    with col_dl3:
-        # Generate dynamic PPTX presentation
-        pptx_data = convert_df_to_pptx(
-            st.session_state.df,
-            st.session_state.video_title,
-            st.session_state.video_url,
-            st.session_state.analysis_mode,
-            st.session_state.llm_model
-        )
-        st.download_button(
-            label=":material/download: Ekspor Presentasi (.pptx)",
-            data=pptx_data,
-            file_name=f"semantika_presentasi_{extract_video_id(st.session_state.video_url)}.pptx",
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            use_container_width=True
-        )
-
-    # Section 3: Live Evaluation
-    st.markdown("---")
-    st.subheader(":material/trending_up: Evaluasi Performa Real-Time")
-    
-    # Filter rows with Ground Truth
-    df_eval = st.session_state.df.dropna(subset=["Ground Truth"]).copy()
-    df_eval = df_eval[df_eval["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
-    
-    if len(df_eval) == 0:
-        st.warning("Belum ada Ground Truth yang diisi. Silakan isi beberapa baris pada kolom Ground Truth di tabel atas untuk memunculkan evaluasi metrik akurasi.", icon=":material/warning:")
-    else:
-        # Pre-calculate counts for transparent banner information
-        total_gt = len(df_eval)
+        df_eval = st.session_state.df.dropna(subset=["Ground Truth"]).copy()
+        df_eval = df_eval[df_eval["Ground Truth"].astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"])]
         
-        st.success(
-            f"Menghitung performa berdasarkan **{total_gt}** komentar yang telah dilabeli Ground Truth (Evaluasi seluruh kelas: Positif, Negatif, dan Netral).",
-            icon=":material/check_circle:"
-        )
-        
-        y_true = df_eval["Ground Truth"].str.strip().str.lower()
-        y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
-        y_llm = df_eval["LLM Sentiment"].str.strip().str.lower()
-        
-        # Standard ML Scores
-        lex_acc = accuracy_score(y_true, y_lexicon)
-        lex_prec, lex_rec, lex_f1, _ = precision_recall_fscore_support(y_true, y_lexicon, average='macro', zero_division=0)
-        kappa_lex = cohen_kappa_score(y_true, y_lexicon)
-        
-        llm_acc = accuracy_score(y_true, y_llm)
-        llm_prec, llm_rec, llm_f1, _ = precision_recall_fscore_support(y_true, y_llm, average='macro', zero_division=0)
-        kappa_llm = cohen_kappa_score(y_true, y_llm)
-        
-        # Calculate SEMANTIKA Points System (all 3 classes)
-        lex_points = 0
-        llm_points = 0
-        lex_correct = 0
-        llm_correct = 0
-        
-        # Breakdown counters
-        lex_correct_pos = 0
-        lex_correct_neg = 0
-        lex_correct_net = 0
-        
-        llm_correct_pos = 0
-        llm_correct_neg = 0
-        llm_correct_net = 0
-        
-        total_pos = 0
-        total_neg = 0
-        total_net = 0
-        
-        for idx, row in df_eval.iterrows():
-            gt = str(row["Ground Truth"]).strip().lower()
-            lex = str(row["Lexicon Sentiment"]).strip().lower()
-            llm = str(row["LLM Sentiment"]).strip().lower()
-            
-            if gt == "positif":
-                total_pos += 1
-            elif gt == "negatif":
-                total_neg += 1
-            elif gt == "netral":
-                total_net += 1
-                
-            # Lexicon
-            if lex == gt:
-                lex_points += 1
-                lex_correct += 1
-                if gt == "positif":
-                    lex_correct_pos += 1
-                elif gt == "negatif":
-                    lex_correct_neg += 1
-                elif gt == "netral":
-                    lex_correct_net += 1
-            else:
-                lex_points -= 1
-                
-            # LLM
-            if llm == gt:
-                llm_points += 1
-                llm_correct += 1
-                if gt == "positif":
-                    llm_correct_pos += 1
-                elif gt == "negatif":
-                    llm_correct_neg += 1
-                elif gt == "netral":
-                    llm_correct_net += 1
-            else:
-                llm_points -= 1
-
-        total_eval_comments = len(df_eval)
-
-        # Render Points Comparison UI Cards
-        col_pts1, col_pts2 = st.columns(2)
-        with col_pts1:
-            st.markdown(
-                f"""
-                <div class="point-card lexicon-card">
-                    <h3>POIN PERFORMA LEXICON</h3>
-                    <div style="font-size: 3rem; font-weight: 800; margin: 5px 0;">{lex_points}</div>
-                    <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 5px;">Total Benar: {lex_correct} / {total_eval_comments} Komentar</div>
-                    <div style="font-size: 0.85rem; opacity: 0.8; line-height: 1.4; margin-bottom: 8px; text-align: left; padding-left: 20%;">
-                        • Positif: {lex_correct_pos} / {total_pos}<br/>
-                        • Negatif: {lex_correct_neg} / {total_neg}<br/>
-                        • Netral: {lex_correct_net} / {total_net}
-                    </div>
-                    <p style="margin-top: 5px; font-size: 0.8rem;">Metode Sastrawi + InSet Lexicon</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            
-        with col_pts2:
-            st.markdown(
-                f"""
-                <div class="point-card llm-card">
-                    <h3>POIN PERFORMA LLM</h3>
-                    <div style="font-size: 3rem; font-weight: 800; margin: 5px 0;">{llm_points}</div>
-                    <div style="font-size: 1rem; font-weight: 600; opacity: 0.9; margin-bottom: 5px;">Total Benar: {llm_correct} / {total_eval_comments} Komentar</div>
-                    <div style="font-size: 0.85rem; opacity: 0.8; line-height: 1.4; margin-bottom: 8px; text-align: left; padding-left: 20%;">
-                        • Positif: {llm_correct_pos} / {total_pos}<br/>
-                        • Negatif: {llm_correct_neg} / {total_neg}<br/>
-                        • Netral: {llm_correct_net} / {total_net}
-                    </div>
-                    <p style="margin-top: 5px; font-size: 0.8rem;">NVIDIA NIM ({st.session_state.llm_model.split('/')[-1]})</p>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        # Render Points Donut Charts for Accuracy (Correct vs Incorrect)
-        # Helper to format percentage and count inside pie slices
-        def pct_val_fmt(pct, allvals):
-            absolute = int(round(pct/100.*np.sum(allvals)))
-            return f"{pct:.1f}%\n({absolute} data)"
-            
-        fig_perf, (ax_p1, ax_p2) = plt.subplots(1, 2, figsize=(8, 3))
-        
-        # Colors: Green for Correct, Red for Incorrect
-        perf_colors = ["#2ecc71", "#e74c3c"]
-        
-        # Lexicon Donut
-        lex_incorrect = total_eval_comments - lex_correct
-        if total_eval_comments > 0:
-            lex_sizes = [lex_correct, lex_incorrect]
-            lex_labels = ["Benar", "Salah"]
-            lex_data = [(s, l) for s, l in zip(lex_sizes, lex_labels) if s > 0]
-            if lex_data:
-                sizes, labels = zip(*lex_data)
-                ax_p1.pie(sizes, labels=labels, autopct=lambda pct: pct_val_fmt(pct, sizes), startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.70, textprops=dict(color="black", weight="bold", fontsize=8))
-                centre_circle = plt.Circle((0,0), 0.50, fc='white')
-                ax_p1.add_artist(centre_circle)
-                ax_p1.set_title("Akurasi Lexicon (Benar vs Salah)", fontsize=9, weight="bold")
-            else:
-                ax_p1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center', fontsize=9)
+        if len(df_eval) == 0:
+            st.warning("Belum ada Ground Truth yang diisi. Silakan isi beberapa baris pada kolom Ground Truth di salah satu tab mode untuk menampilkan perbandingan performa.", icon=":material/warning:")
         else:
-            ax_p1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center', fontsize=9)
+            y_true = df_eval["Ground Truth"].str.strip().str.lower()
             
-        # LLM Donut
-        llm_incorrect = total_eval_comments - llm_correct
-        if total_eval_comments > 0:
-            llm_sizes = [llm_correct, llm_incorrect]
-            llm_labels = ["Benar", "Salah"]
-            llm_data = [(s, l) for s, l in zip(llm_sizes, llm_labels) if s > 0]
-            if llm_data:
-                sizes, labels = zip(*llm_data)
-                ax_p2.pie(sizes, labels=labels, autopct=lambda pct: pct_val_fmt(pct, sizes), startangle=90, colors=[perf_colors[0] if l == "Benar" else perf_colors[1] for l in labels], pctdistance=0.70, textprops=dict(color="black", weight="bold", fontsize=8))
-                centre_circle = plt.Circle((0,0), 0.50, fc='white')
-                ax_p2.add_artist(centre_circle)
-                ax_p2.set_title("Akurasi LLM (Benar vs Salah)", fontsize=9, weight="bold")
-            else:
-                ax_p2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center', fontsize=9)
-        else:
-            ax_p2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center', fontsize=9)
+            # Scores for Lexicon
+            y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
+            lex_acc = accuracy_score(y_true, y_lexicon)
+            lex_prec, lex_rec, lex_f1, _ = precision_recall_fscore_support(y_true, y_lexicon, average='macro', zero_division=0)
             
-        plt.tight_layout()
-        st.pyplot(fig_perf)
-        plt.close()
+            # Scores for LLM Global
+            y_llm_global = df_eval["LLM Sentiment Global"].str.strip().str.lower()
+            llm_g_acc = accuracy_score(y_true, y_llm_global)
+            llm_g_prec, llm_g_rec, llm_g_f1, _ = precision_recall_fscore_support(y_true, y_llm_global, average='macro', zero_division=0)
             
-        # Point Rules Explanation
-        st.markdown("""
-        <div class="info-box">
-            <strong>Sistem Poin Komparasi SEMANTIKA:</strong><br/>
-            Sistem poin di atas dihitung dengan ketentuan:
-            <ul>
-                <li>Setiap data Ground Truth yang bernilai <strong>positif</strong>, <strong>negatif</strong>, atau <strong>netral</strong> akan dievaluasi.</li>
-                <li>Jika tebakan model <strong>Benar (sesuai Ground Truth)</strong> $\rightarrow$ Model mendapatkan <strong>+1 Poin</strong>.</li>
-                <li>Jika tebakan model <strong>Salah</strong> $\rightarrow$ Model dikurangi <strong>-1 Poin</strong>.</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Benchmark Waktu Eksekusi
-        st.markdown("### :material/timer: Perbandingan Kecepatan Eksekusi (Benchmark)")
-        if st.session_state.get("lexicon_time") is not None and st.session_state.get("llm_time") is not None:
-            col_bench1, col_bench2 = st.columns(2)
-            total_comments = len(st.session_state.df)
-            with col_bench1:
-                lex_t = st.session_state.lexicon_time
-                lex_avg = (lex_t / total_comments) * 1000 if total_comments > 0 else 0
-                st.metric(
-                    label="Total Durasi Analisis Lexicon (Offline/Lokal)",
-                    value=f"{lex_t:.4f} detik",
-                    delta=f"{lex_avg:.2f} ms / komentar",
-                    delta_color="normal"
-                )
-            with col_bench2:
-                llm_t = st.session_state.llm_time
-                llm_avg = (llm_t / total_comments) * 1000 if total_comments > 0 else 0
-                st.metric(
-                    label="Total Durasi Analisis LLM (NVIDIA NIM Cloud)",
-                    value=f"{llm_t:.2f} detik",
-                    delta=f"{llm_avg:.0f} ms / komentar",
-                    delta_color="inverse"
-                )
+            # Scores for LLM Video
+            y_llm_video = df_eval["LLM Sentiment Video"].str.strip().str.lower()
+            llm_v_acc = accuracy_score(y_true, y_llm_video)
+            llm_v_prec, llm_v_rec, llm_v_f1, _ = precision_recall_fscore_support(y_true, y_llm_video, average='macro', zero_division=0)
             
-            # Persentase kecepatan
-            if lex_t > 0:
-                speedup = llm_t / lex_t
-                st.info(f":material/bolt: **Hasil Benchmark Kecepatan:** Metode Lexicon berjalan **{speedup:.1f}x lebih cepat** dibandingkan metode LLM karena diproses secara lokal tanpa latency jaringan.", icon=":material/info:")
-        else:
-            st.info("Informasi waktu eksekusi benchmark hanya tersedia untuk video yang baru dianalisis pada sesi aktif saat ini.", icon=":material/info:")
-        
-        # Tab Layout for Visualizations
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-            ":material/pie_chart: Sebaran Sentimen (Donut Charts)", 
-            ":material/equalizer: Performa Klasifikasi (Metrics)",
-            ":material/bar_chart: Perbandingan Metrik (Bar Chart)",
-            ":material/timeline: Tren Sentimen (Timeline)",
-            ":material/short_text: Frekuensi Kata (Top Words)",
-            ":material/category: Pemodelan Topik (Topic Modeling)"
-        ])
-        
-        # Tab 1: Donut Charts
-        with tab1:
-            st.markdown("### Perbandingan Sebaran Sentimen (Donut Charts)")
-            
-            # Count sentiment frequencies for each category
-            sentiment_labels = ["positif", "negatif", "netral"]
-            color_map = {
-                "positif": "#2ecc71",  # Green
-                "negatif": "#e74c3c",  # Red
-                "netral": "#95a5a6"   # Gray
-            }
-            
-            # Helper to calculate sizes
-            def get_sizes_and_colors(series):
-                counts = series.value_counts()
-                sizes = []
-                colors = []
-                labels = []
-                for label in sentiment_labels:
-                    count = counts.get(label, 0)
-                    if count > 0:
-                        sizes.append(count)
-                        colors.append(color_map[label])
-                        labels.append(label.capitalize())
-                return sizes, colors, labels
-                
-            gt_sizes, gt_colors, gt_labels = get_sizes_and_colors(y_true)
-            lex_sizes, lex_colors, lex_labels = get_sizes_and_colors(y_lexicon)
-            llm_sizes, llm_colors, llm_labels = get_sizes_and_colors(y_llm)
-            
-            # Plot the 3 donut charts side-by-side
-            fig_donut, (ax_d1, ax_d2, ax_d3) = plt.subplots(1, 3, figsize=(18, 6))
-            
-            # Donut 1: Ground Truth
-            if gt_sizes:
-                wedges, texts, autotexts = ax_d1.pie(gt_sizes, labels=gt_labels, autopct='%1.1f%%', startangle=90, colors=gt_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
-                centre_circle = plt.Circle((0,0), 0.50, fc='white')
-                ax_d1.add_artist(centre_circle)
-                ax_d1.set_title("Sebaran Ground Truth", fontsize=12, weight="bold")
-            else:
-                ax_d1.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
-                
-            # Donut 2: Lexicon
-            if lex_sizes:
-                wedges, texts, autotexts = ax_d2.pie(lex_sizes, labels=lex_labels, autopct='%1.1f%%', startangle=90, colors=lex_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
-                centre_circle = plt.Circle((0,0), 0.50, fc='white')
-                ax_d2.add_artist(centre_circle)
-                ax_d2.set_title("Sebaran Lexicon-based", fontsize=12, weight="bold")
-            else:
-                ax_d2.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
-                
-            # Donut 3: LLM
-            if llm_sizes:
-                wedges, texts, autotexts = ax_d3.pie(llm_sizes, labels=llm_labels, autopct='%1.1f%%', startangle=90, colors=llm_colors, pctdistance=0.75, textprops=dict(color="black", weight="bold"))
-                centre_circle = plt.Circle((0,0), 0.50, fc='white')
-                ax_d3.add_artist(centre_circle)
-                ax_d3.set_title(f"Sebaran LLM-based\n({st.session_state.llm_model.split('/')[-1]})", fontsize=12, weight="bold")
-            else:
-                ax_d3.text(0.5, 0.5, 'Tidak ada data', ha='center', va='center')
-                
-            plt.tight_layout()
-            st.pyplot(fig_donut)
-            plt.close()
- 
-        # Tab 2: Performa Klasifikasi & Akurasi
-        with tab2:
-            st.markdown("### Performa Klasifikasi & Akurasi")
-            
-            # Display metrics columns
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                st.markdown("#### :material/book: Performa Lexicon (Sastrawi + InSet)")
-                st.write(f"- **Accuracy (Akurasi)**: {lex_acc * 100:.2f}%")
-                st.write(f"- **Precision (Presisi)**: {lex_prec * 100:.2f}%")
-                st.write(f"- **Recall (Sensitivitas)**: {lex_rec * 100:.2f}%")
-                st.write(f"- **F1-Score**: {lex_f1 * 100:.2f}%")
-                st.write(f"- **Cohen's Kappa**: `{kappa_lex:.4f}` ({interpret_kappa(kappa_lex)})")
-                
-            with col_m2:
-                st.markdown(f"#### :material/psychology: Performa LLM ({st.session_state.llm_model.split('/')[-1]})")
-                st.write(f"- **Accuracy (Akurasi)**: {llm_acc * 100:.2f}%")
-                st.write(f"- **Precision (Presisi)**: {llm_prec * 100:.2f}%")
-                st.write(f"- **Recall (Sensitivitas)**: {llm_rec * 100:.2f}%")
-                st.write(f"- **F1-Score**: {llm_f1 * 100:.2f}%")
-                st.write(f"- **Cohen's Kappa**: `{kappa_llm:.4f}` ({interpret_kappa(kappa_llm)})")
- 
-        # Tab 3: Metrics Comparison Bar Chart
-        with tab3:
-            st.markdown("### Perbandingan Metrik Evaluasi (Lexicon vs LLM)")
-            
-            metrics = ['Akurasi', 'Presisi', 'Sensitivitas (Recall)', 'F1-Score']
-            lex_scores = [lex_acc * 100, lex_prec * 100, lex_rec * 100, lex_f1 * 100]
-            llm_scores = [llm_acc * 100, llm_prec * 100, llm_rec * 100, llm_f1 * 100]
+            # 1. Bar Chart Comparison
+            st.markdown("#### Perbandingan Akurasi & F1-Score")
+            metrics = ["Akurasi", "F1-Score"]
+            lex_scores = [lex_acc * 100, lex_f1 * 100]
+            llm_g_scores = [llm_g_acc * 100, llm_g_f1 * 100]
+            llm_v_scores = [llm_v_acc * 100, llm_v_f1 * 100]
             
             x = np.arange(len(metrics))
-            width = 0.35
+            width = 0.25
             
-            fig_metrics, ax_m = plt.subplots(figsize=(10, 5))
-            rects1 = ax_m.bar(x - width/2, lex_scores, width, label='Lexicon-based', color='#3498db')
-            rects2 = ax_m.bar(x + width/2, llm_scores, width, label=f'LLM-based ({st.session_state.llm_model.split("/")[-1]})', color='#2ecc71')
+            fig_cmp, ax_cmp = plt.subplots(figsize=(10, 5))
+            rects1 = ax_cmp.bar(x - width, lex_scores, width, label='Lexicon-Based', color='#3498db')
+            rects2 = ax_cmp.bar(x, llm_g_scores, width, label='LLM Konteks Global', color='#e67e22')
+            rects3 = ax_cmp.bar(x + width, llm_v_scores, width, label='LLM Konteks ke Video', color='#2ecc71')
             
-            ax_m.set_ylabel('Skor (%)', weight="bold")
-            ax_m.set_title('Perbandingan Metrik Akurasi, Presisi, Recall, dan F1-Score', weight="bold", fontsize=12)
-            ax_m.set_xticks(x)
-            ax_m.set_xticklabels(metrics, weight="bold")
-            ax_m.set_ylim(0, 110)
-            ax_m.legend()
+            ax_cmp.set_ylabel('Skor (%)', weight="bold")
+            ax_cmp.set_title('Perbandingan Metrik: Lexicon vs LLM Global vs LLM Video', weight="bold", fontsize=12)
+            ax_cmp.set_xticks(x)
+            ax_cmp.set_xticklabels(metrics, weight="bold")
+            ax_cmp.set_ylim(0, 115)
+            ax_cmp.legend()
             
-            def autolabel(rects):
+            def autolabel_cmp(rects):
                 for rect in rects:
                     height = rect.get_height()
-                    ax_m.annotate(f'{height:.1f}%',
+                    ax_cmp.annotate(f'{height:.1f}%',
                                 xy=(rect.get_x() + rect.get_width() / 2, height),
-                                xytext=(0, 3),  # 3 points vertical offset
+                                xytext=(0, 3),
                                 textcoords="offset points",
-                                ha='center', va='bottom', weight="bold", fontsize=9)
-                                
-            autolabel(rects1)
-            autolabel(rects2)
+                                ha='center', va='bottom', weight="bold", fontsize=8)
+            autolabel_cmp(rects1)
+            autolabel_cmp(rects2)
+            autolabel_cmp(rects3)
             
             plt.tight_layout()
-            st.pyplot(fig_metrics)
+            st.pyplot(fig_cmp)
             plt.close()
             
-            st.markdown("---")
-            st.markdown("#### :material/psychology: Nilai Cohen's Kappa (Tingkat Keandalan Klasifikasi)")
-            
-            col_k1, col_k2 = st.columns(2)
-            with col_k1:
-                st.info(f"**Cohen's Kappa Lexicon vs Ground Truth:**\n\n`{kappa_lex:.4f}` $\\rightarrow$ Kesepakatan **{interpret_kappa(kappa_lex)}**", icon=":material/book:")
-            with col_k2:
-                st.info(f"**Cohen's Kappa LLM vs Ground Truth:**\n\n`{kappa_llm:.4f}` $\\rightarrow$ Kesepakatan **{interpret_kappa(kappa_llm)}**", icon=":material/psychology:")
+            # 2. Side-by-side Point Cards
+            st.markdown("#### Perbandingan Skor Poin")
+            lex_points, llm_g_points, llm_v_points = 0, 0, 0
+            for idx, row in df_eval.iterrows():
+                gt = str(row["Ground Truth"]).strip().lower()
+                lex = str(row["Lexicon Sentiment"]).strip().lower()
+                llm_g = str(row["LLM Sentiment Global"]).strip().lower()
+                llm_v = str(row["LLM Sentiment Video"]).strip().lower()
                 
-            st.markdown("""
-            <small>
-            *Catatan Metodologi:* Skor Cohen's Kappa mengukur kekuatan kesepakatan klasifikasi dengan mengeliminasi faktor kebetulan (chance agreement).
-            Skala kesepakatan Cohen's Kappa:
-            - &lt; 0.00: Tidak ada kesepakatan
-            - 0.01 - 0.20: Sangat Lemah
-            - 0.21 - 0.40: Lemah
-            - 0.41 - 0.60: Sedang
-            - 0.61 - 0.80: Kuat
-            - 0.81 - 1.00: Sangat Kuat
-            </small>
-            """, unsafe_allow_html=True)
-
-        # Tab 4: Tren Sentimen terhadap Waktu Rilis Komentar
-        with tab4:
-            st.markdown("### Tren Sentimen terhadap Waktu Rilis Komentar")
-            if "Timestamp" in df_eval.columns and df_eval["Timestamp"].notna().any():
-                try:
-                    df_time = df_eval.copy()
-                    df_time["Datetime"] = pd.to_datetime(df_time["Timestamp"], unit='s', errors='coerce')
-                    df_time = df_time.dropna(subset=["Datetime"])
-                    
-                    if len(df_time) > 0:
-                        df_time["Date"] = df_time["Datetime"].dt.date
-                        time_pivot = df_time.groupby(["Date", "Ground Truth"]).size().unstack(fill_value=0)
-                        
-                        for col in ["positif", "negatif", "netral"]:
-                            if col not in time_pivot.columns:
-                                time_pivot[col] = 0
-                                
-                        time_pivot = time_pivot.sort_index()
-                        
-                        fig_time, ax_t = plt.subplots(figsize=(12, 5))
-                        if "positif" in time_pivot.columns:
-                            ax_t.plot(time_pivot.index, time_pivot["positif"], marker='o', color='#2ecc71', label='Positif', linewidth=2.5)
-                        if "negatif" in time_pivot.columns:
-                            ax_t.plot(time_pivot.index, time_pivot["negatif"], marker='x', color='#e74c3c', label='Negatif', linewidth=2.5)
-                        if "netral" in time_pivot.columns:
-                            ax_t.plot(time_pivot.index, time_pivot["netral"], marker='s', color='#95a5a6', label='Netral', linewidth=2)
-                        
-                        ax_t.set_ylabel('Jumlah Komentar', weight="bold")
-                        ax_t.set_xlabel('Tanggal', weight="bold")
-                        ax_t.set_title('Tren Perkembangan Sentimen Komentar (Ground Truth) sepanjang Waktu', weight="bold", fontsize=12)
-                        ax_t.grid(True, linestyle='--', alpha=0.5)
-                        ax_t.legend()
-                        plt.xticks(rotation=45)
-                        plt.tight_layout()
-                        st.pyplot(fig_time)
-                        plt.close()
-                        
-                        st.markdown("#### Detail Jumlah Sentimen Harian")
-                        st.dataframe(time_pivot, use_container_width=True)
-                    else:
-                        st.info("Data timestamp tidak valid untuk dianalisis.")
-                except Exception as e:
-                    st.error(f"Gagal memproses tren waktu: {e}")
-            else:
-                st.info("Komentar pada video ini tidak memiliki data timestamp yang valid untuk visualisasi tren waktu.")
-
-        # Tab 5: Analisis Frekuensi Kata Terpopuler
-        with tab5:
-            st.markdown("### Analisis Frekuensi Kata Kunci Terpopuler")
-            
-            def get_top_words(df_subset, top_n=10):
-                word_counts = {}
-                for text in df_subset["Cleaned Comment"].dropna().astype(str):
-                    for word in text.split():
-                        if len(word) > 1:
-                            word_counts[word] = word_counts.get(word, 0) + 1
-                sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
-                return sorted_words[:top_n]
+                lex_points += 1 if lex == gt else -1
+                llm_g_points += 1 if llm_g == gt else -1
+                llm_v_points += 1 if llm_v == gt else -1
                 
-            df_pos = df_eval[df_eval["Ground Truth"] == "positif"]
-            df_neg = df_eval[df_eval["Ground Truth"] == "negatif"]
-            
-            top_pos = get_top_words(df_pos)
-            top_neg = get_top_words(df_neg)
-            
-            col_pos, col_neg = st.columns(2)
-            with col_pos:
-                st.markdown("#### Kata Kunci pada Komentar Positif")
-                if top_pos:
-                    words, counts = zip(*top_pos)
-                    fig_p, ax_p = plt.subplots(figsize=(6, 4))
-                    ax_p.barh(words[::-1], counts[::-1], color='#2ecc71')
-                    ax_p.set_title("Top Kata Komentar Positif", weight="bold")
-                    ax_p.set_xlabel("Frekuensi")
-                    plt.tight_layout()
-                    st.pyplot(fig_p)
-                    plt.close()
-                    st.dataframe(pd.DataFrame(top_pos, columns=["Kata", "Frekuensi"]), use_container_width=True)
-                else:
-                    st.info("Belum ada data kata kunci positif yang cukup.")
-                    
-            with col_neg:
-                st.markdown("#### Kata Kunci pada Komentar Negatif")
-                if top_neg:
-                    words, counts = zip(*top_neg)
-                    fig_n, ax_n = plt.subplots(figsize=(6, 4))
-                    ax_n.barh(words[::-1], counts[::-1], color='#e74c3c')
-                    ax_n.set_title("Top Kata Komentar Negatif", weight="bold")
-                    ax_n.set_xlabel("Frekuensi")
-                    plt.tight_layout()
-                    st.pyplot(fig_n)
-                    plt.close()
-                    st.dataframe(pd.DataFrame(top_neg, columns=["Kata", "Frekuensi"]), use_container_width=True)
-                else:
-                    st.info("Belum ada data kata kunci negatif yang cukup.")
-
-        # Tab 6: Pemodelan Topik (TF-IDF + KMeans)
-        with tab6:
-            st.markdown("### Pemodelan Topik (Topic Modeling)")
-            st.write("Mengelompokkan komentar secara otomatis menggunakan kombinasi algoritma **TF-IDF Vectorizer** dan **K-Means Clustering**.")
-            
-            clean_comments = df_eval["Cleaned Comment"].dropna().astype(str).tolist()
-            original_comments = df_eval["Original Comment"].dropna().astype(str).tolist()
-            
-            if len(clean_comments) >= 5:
-                try:
-                    from sklearn.feature_extraction.text import TfidfVectorizer
-                    from sklearn.cluster import KMeans
-                    
-                    vectorizer = TfidfVectorizer(max_features=500, min_df=1, stop_words=None)
-                    X = vectorizer.fit_transform(clean_comments)
-                    
-                    n_clusters = min(3, len(clean_comments))
-                    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init='auto')
-                    kmeans.fit(X)
-                    
-                    order_centroids = kmeans.cluster_centers_.argsort()[:, ::-1]
-                    terms = vectorizer.get_feature_names_out()
-                    
-                    st.markdown(f"Berhasil mendeteksi **{n_clusters}** kelompok topik utama pembicaraan:")
-                    
-                    for cluster_idx in range(n_clusters):
-                        top_words = [terms[ind] for ind in order_centroids[cluster_idx, :5]]
-                        topic_keywords = ", ".join(top_words)
-                        cluster_comments = [original_comments[j] for j, label in enumerate(kmeans.labels_) if label == cluster_idx]
-                        sample_comments = cluster_comments[:3]
-                        
-                        st.markdown(f"**Topik {cluster_idx + 1}:** `{topic_keywords}` ({len(cluster_comments)} komentar)")
-                        for sc in sample_comments:
-                            st.caption(f"- \"{sc[:120]}...\"")
-                        st.markdown(" ")
-                except Exception as e:
-                    st.error(f"Gagal melakukan clustering topik: {e}")
-            else:
-                st.info("Dibutuhkan minimal 5 komentar Ground Truth untuk mendeteksi kelompok topik secara akurat.")
+            col_c1, col_c2, col_c3 = st.columns(3)
+            with col_c1:
+                st.markdown(
+                    f"""
+                    <div class="point-card lexicon-card">
+                        <h3>LEXICON-BASED</h3>
+                        <div style="font-size: 2.5rem; font-weight: 800; margin: 5px 0;">{lex_points} Poin</div>
+                        <p style="margin-top: 5px; font-size: 0.8rem;">Sastrawi + InSet</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            with col_c2:
+                st.markdown(
+                    f"""
+                    <div class="point-card llm-card" style="background: linear-gradient(135deg, #d35400, #e67e22);">
+                        <h3>LLM KONTEKS GLOBAL</h3>
+                        <div style="font-size: 2.5rem; font-weight: 800; margin: 5px 0;">{llm_g_points} Poin</div>
+                        <p style="margin-top: 5px; font-size: 0.8rem;">Llama 3.1 8B (NIM)</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            with col_c3:
+                st.markdown(
+                    f"""
+                    <div class="point-card llm-card">
+                        <h3>LLM KONTEKS VIDEO</h3>
+                        <div style="font-size: 2.5rem; font-weight: 800; margin: 5px 0;">{llm_v_points} Poin</div>
+                        <p style="margin-top: 5px; font-size: 0.8rem;">Llama 3.1 8B (NIM)</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
+            # 3. Summary Table
+            st.markdown("#### Tabel Perbandingan Seluruh Metrik")
+            summary_data = {
+                "Metrik": ["Akurasi", "Presisi (Macro)", "Recall (Macro)", "F1-Score (Macro)"],
+                "Lexicon-Based": [f"{lex_acc*100:.1f}%", f"{lex_prec*100:.1f}%", f"{lex_rec*100:.1f}%", f"{lex_f1*100:.1f}%"],
+                "LLM Konteks Global": [f"{llm_g_acc*100:.1f}%", f"{llm_g_prec*100:.1f}%", f"{llm_g_rec*100:.1f}%", f"{llm_g_f1*100:.1f}%"],
+                "LLM Konteks ke Video": [f"{llm_v_acc*100:.1f}%", f"{llm_v_prec*100:.1f}%", f"{llm_v_rec*100:.1f}%", f"{llm_v_f1*100:.1f}%"]
+            }
+            st.table(pd.DataFrame(summary_data))
 
 elif menu_selection == "Kelola Kamus Slang":
     st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Kelola Kamus Slang</h1>", unsafe_allow_html=True)
