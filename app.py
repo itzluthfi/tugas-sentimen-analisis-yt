@@ -304,6 +304,32 @@ def render_mode_visualizations(mode_key, llm_col_sentiment, llm_col_reason, mode
         st.warning("Belum ada data Ground Truth terisi. Silakan isi Ground Truth pada tabel untuk memunculkan visualisasi.", icon=":material/warning:")
         return
 
+    # Language Filter for Visualizations
+    if "Language" in df_eval.columns:
+        has_en = (df_eval["Language"].str.strip().str.lower() == "en").any()
+        has_id = (df_eval["Language"].str.strip().str.lower() == "id").any()
+        
+        options = ["Semua Bahasa"]
+        if has_id:
+            options.append("Bahasa Indonesia (ID)")
+        if has_en:
+            options.append("Bahasa Inggris (EN)")
+            
+        if len(options) > 1:
+            selected_lang = st.selectbox(
+                "🌐 Filter Bahasa Visualisasi:",
+                options=options,
+                key=f"lang_filter_viz_{mode_key}"
+            )
+            if selected_lang == "Bahasa Indonesia (ID)":
+                df_eval = df_eval[df_eval["Language"].str.strip().str.lower() == "id"]
+            elif selected_lang == "Bahasa Inggris (EN)":
+                df_eval = df_eval[df_eval["Language"].str.strip().str.lower() == "en"]
+                
+    if len(df_eval) == 0:
+        st.info("Tidak ada data komentar dengan bahasa terpilih yang memiliki Ground Truth.")
+        return
+
     y_true = df_eval["Ground Truth"].str.strip().str.lower()
     y_lexicon = df_eval["Lexicon Sentiment"].str.strip().str.lower()
     y_llm = df_eval[llm_col_sentiment].str.strip().str.lower()
