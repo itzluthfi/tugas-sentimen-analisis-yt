@@ -2337,59 +2337,69 @@ if menu_selection == "Analisis Video Tunggal":
         )
     
     if history_files:
+        def load_history_callback():
+            selected = st.session_state.history_selector
+            if selected != "-- Pilih untuk memuat --" and selected != st.session_state.loaded_history_file:
+                history_path = os.path.join(HISTORY_DIR, selected)
+                try:
+                    df_loaded = pd.read_csv(history_path)
+                    df_loaded = upgrade_dataframe_schema(df_loaded)
+                    
+                    if "LLM Model" in df_loaded.columns:
+                        st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
+                    else:
+                        df_loaded["LLM Model"] = "meta/llama-3.1-8b-instruct"
+                        st.session_state.llm_model = "meta/llama-3.1-8b-instruct"
+                    if "Language" in df_loaded.columns:
+                        st.session_state.detected_lang = str(df_loaded["Language"].iloc[0])
+                    else:
+                        df_loaded["Language"] = "id"
+                        st.session_state.detected_lang = "id"
+                    if "Analysis Mode" in df_loaded.columns:
+                        st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
+                    else:
+                        df_loaded["Analysis Mode"] = "Konteks Global"
+                        st.session_state.analysis_mode = "Konteks Global"
+                    df_loaded.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+                    
+                    filename_clean = selected[:-4]
+                    match = re.match(r"^\[(.*?)\] (.*)$", filename_clean)
+                    if match:
+                        vid_id = match.group(1)
+                        vid_title = re.sub(r"^\[(?:Konteks Global|Konteks ke Video)\]\s*", "", match.group(2)).strip()
+                        new_url = f"https://www.youtube.com/watch?v={vid_id}"
+                    else:
+                        new_url = YOUTUBE_VIDEO_URL
+                        vid_title = filename_clean
+                        
+                    st.session_state.video_url = new_url
+                    st.session_state.video_title = vid_title
+                    st.session_state.df = df_loaded
+                    st.session_state.youtube_url_widget = new_url  # Update sidebar widget safely in callback
+                    st.session_state.loaded_history_file = selected
+                    st.session_state.lexicon_time = None
+                    st.session_state.llm_time = None
+                    st.session_state.load_success_msg = "Berhasil memuat data riwayat!"
+                except Exception as e:
+                    st.session_state.load_error_msg = f"Gagal memuat: {e}"
+
         history_options = ["-- Pilih untuk memuat --"] + history_files
         selected_history = st.sidebar.selectbox(
             "Muat Hasil Sebelumnya",
             options=history_options,
             index=0,
+            key="history_selector",
+            on_change=load_history_callback,
             help="Muat hasil analisis secara instan dari lokal disk."
         )
         
-        if selected_history != "-- Pilih untuk memuat --" and selected_history != st.session_state.loaded_history_file:
-            history_path = os.path.join(HISTORY_DIR, selected_history)
-            try:
-                df_loaded = pd.read_csv(history_path)
-                df_loaded["Ground Truth"] = df_loaded["Ground Truth"].fillna("")
-                if "LLM Reason" not in df_loaded.columns:
-                    df_loaded["LLM Reason"] = ""
-                if "LLM Model" in df_loaded.columns:
-                    st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
-                else:
-                    df_loaded["LLM Model"] = "meta/llama-3.1-8b-instruct"
-                    st.session_state.llm_model = "meta/llama-3.1-8b-instruct"
-                if "Language" in df_loaded.columns:
-                    st.session_state.detected_lang = str(df_loaded["Language"].iloc[0])
-                else:
-                    df_loaded["Language"] = "id"
-                    st.session_state.detected_lang = "id"
-                if "Analysis Mode" in df_loaded.columns:
-                    st.session_state.analysis_mode = str(df_loaded["Analysis Mode"].iloc[0])
-                else:
-                    df_loaded["Analysis Mode"] = "Konteks Global"
-                    st.session_state.analysis_mode = "Konteks Global"
-                df_loaded.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
-                
-                filename_clean = selected_history[:-4]
-                match = re.match(r"^\[(.*?)\] (.*)$", filename_clean)
-                if match:
-                    vid_id = match.group(1)
-                    vid_title = re.sub(r"^\[(?:Konteks Global|Konteks ke Video)\]\s*", "", match.group(2)).strip()
-                    new_url = f"https://www.youtube.com/watch?v={vid_id}"
-                else:
-                    new_url = YOUTUBE_VIDEO_URL
-                    vid_title = filename_clean
-                    
-                st.session_state.video_url = new_url
-                st.session_state.video_title = vid_title
-                st.session_state.df = df_loaded
-                st.session_state.youtube_url_widget = new_url  # Update sidebar widget
-                st.session_state.loaded_history_file = selected_history  # Mark file as loaded
-                st.session_state.lexicon_time = None
-                st.session_state.llm_time = None
-                st.sidebar.success("Berhasil memuat data riwayat!")
-                st.rerun()
-            except Exception as e:
-                st.sidebar.error(f"Gagal memuat: {e}")
+        # Display messages from callback if any
+        if "load_success_msg" in st.session_state and st.session_state.load_success_msg:
+            st.sidebar.success(st.session_state.load_success_msg)
+            st.session_state.load_success_msg = ""
+        if "load_error_msg" in st.session_state and st.session_state.load_error_msg:
+            st.sidebar.error(st.session_state.load_error_msg)
+            st.session_state.load_error_msg = ""
     
         # Kelola Riwayat Expander
         with st.sidebar.expander(":material/delete: Kelola Riwayat"):
