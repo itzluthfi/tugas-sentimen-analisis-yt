@@ -3107,6 +3107,38 @@ elif menu_selection == "Kelola Kamus Slang":
     
     # We want to edit the custom slang dictionary.
     import json
+    
+    # Seed 20 custom slangs if custom_slang.json doesn't exist yet
+    if not os.path.exists(CUSTOM_SLANG_PATH):
+        seed_slangs = {
+            "mager": "malas gerak",
+            "baper": "bawa perasaan",
+            "gabut": "tidak ada kerjaan",
+            "bisa2nya": "bisa-bisanya",
+            "gemoy": "lucu",
+            "salfok": "salah fokus",
+            "kepo": "ingin tahu",
+            "php": "pemberi harapan palsu",
+            "kzl": "kesal",
+            "tft": "terima kasih",
+            "tbl": "takut banget loh",
+            "ygy": "ya guys ya",
+            "fomo": "takut tertinggal",
+            "caper": "cari perhatian",
+            "gercep": "gerak cepat",
+            "amsiong": "sial",
+            "ansos": "anti sosial",
+            "cie": "kata seru",
+            "sabi": "bisa",
+            "kuy": "ayok"
+        }
+        try:
+            os.makedirs(os.path.dirname(CUSTOM_SLANG_PATH), exist_ok=True)
+            with open(CUSTOM_SLANG_PATH, "w", encoding="utf-8") as f:
+                json.dump(seed_slangs, f, ensure_ascii=False, indent=4)
+        except Exception:
+            pass
+
     custom_slang = {}
     if os.path.exists(CUSTOM_SLANG_PATH):
         try:
@@ -3124,6 +3156,20 @@ elif menu_selection == "Kelola Kamus Slang":
     st.info("Kamus slang default (seperti 'yg' -> 'yang', 'bgt' -> 'banget') sudah aktif di sistem secara otomatis. "
             "Gunakan tabel di bawah ini untuk **menambahkan singkatan baru** atau **meng-override** kata slang default.", icon=":material/info:")
             
+    with st.expander("🔍 Lihat Kamus Slang Bawaan (Default)", expanded=False):
+        from src.normalizer import SLANG_DICT
+        default_slang_list = [{"Singkatan (Slang)": k, "Kata Baku": v} for k, v in SLANG_DICT.items()]
+        df_default_slang = pd.DataFrame(default_slang_list)
+        st.dataframe(
+            df_default_slang,
+            column_config={
+                "Singkatan (Slang)": st.column_config.TextColumn("Singkatan (Slang) / Kata Gaul", width="medium"),
+                "Kata Baku": st.column_config.TextColumn("Kata Baku / Normalisasi", width="medium"),
+            },
+            use_container_width=True,
+            hide_index=True
+        )
+        
     edited_slang_df = st.data_editor(
         df_slang,
         num_rows="dynamic",
