@@ -37,7 +37,7 @@ class LLMSentimentAnalyzer:
             "stream": False
         }
         
-        max_retries = 3
+        max_retries = 1
         backoff_factor = 2.0  # seconds
         
         for attempt in range(max_retries):
