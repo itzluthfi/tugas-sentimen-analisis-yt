@@ -37,7 +37,7 @@ class LLMSentimentAnalyzer:
             "stream": False
         }
         
-        max_retries = 5
+        max_retries = 3
         backoff_factor = 2.0  # seconds
         
         for attempt in range(max_retries):
@@ -64,6 +64,107 @@ class LLMSentimentAnalyzer:
                 time.sleep(wait_time)
                 
         raise RuntimeError(f"Gagal menghubungi NVIDIA NIM API setelah {max_retries} kali percobaan.")
+
+    def _call_cerebras_api(self, messages: list) -> str:
+        from src.config import CEREBRAS_API_KEY
+        url = "https://api.cerebras.ai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {CEREBRAS_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": "gpt-oss-120b",
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": 1024
+        }
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=15)
+            if response.status_code == 200:
+                res_json = response.json()
+                choices = res_json.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "").strip()
+            raise RuntimeError(f"Cerebras API Error {response.status_code}: {response.text}")
+        except Exception as e:
+            raise RuntimeError(f"Gagal memanggil Cerebras API: {e}")
+
+    def _call_cloudflare_api(self, messages: list) -> str:
+        from src.config import CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+        model_id = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+        url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{model_id}"
+        headers = {
+            "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "messages": messages
+        }
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=15)
+            if response.status_code == 200:
+                res_json = response.json()
+                result = res_json.get("result", {})
+                if "response" in result:
+                    resp = result["response"]
+                    if isinstance(resp, str):
+                        return resp.strip()
+                    else:
+                        return json.dumps(resp)
+            
+            # Fallback ke 8B jika 70B 404/400
+            if response.status_code in [400, 404]:
+                logger.warning("Cloudflare 70B tidak tersedia. Menghubungi fallback Cloudflare 8B (@cf/meta/llama-3.1-8b-instruct)...")
+                model_id_8b = "@cf/meta/llama-3.1-8b-instruct"
+                url_8b = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{model_id_8b}"
+                response_8b = requests.post(url_8b, json=payload, headers=headers, timeout=15)
+                if response_8b.status_code == 200:
+                    res_json_8b = response_8b.json()
+                    result_8b = res_json_8b.get("result", {})
+                    if "response" in result_8b:
+                        resp_8b = result_8b["response"]
+                        if isinstance(resp_8b, str):
+                            return resp_8b.strip()
+                        else:
+                            return json.dumps(resp_8b)
+            
+            raise RuntimeError(f"Cloudflare Workers AI Error {response.status_code}: {response.text}")
+        except Exception as e:
+            raise RuntimeError(f"Gagal memanggil Cloudflare API: {e}")
+
+    def _call_api_with_fallbacks(self, messages: list) -> str:
+        """
+        Tries to call NVIDIA NIM API. If it fails, falls back to Cerebras AI.
+        If Cerebras AI also fails, falls back to Cloudflare Workers AI.
+        """
+        # 1. Coba NVIDIA NIM API (Maksimal 3 kali percobaan)
+        try:
+            logger.info(f"Mencoba menghubungi NVIDIA NIM API (Model: {self.model})...")
+            return self._call_nvidia_api(messages)
+        except Exception as e_nvidia:
+            logger.warning(f"NVIDIA NIM API gagal: {e_nvidia}. Beralih ke fallback Cerebras AI...")
+            
+        # 2. Fallback Pertama: Cerebras AI (Model: llama-3.3-70b)
+        from src.config import CEREBRAS_API_KEY
+        if CEREBRAS_API_KEY and CEREBRAS_API_KEY.strip() != "":
+            try:
+                return self._call_cerebras_api(messages)
+            except Exception as e_cerebras:
+                logger.warning(f"Cerebras AI API gagal: {e_cerebras}. Beralih ke fallback Cloudflare Workers AI...")
+        else:
+            logger.warning("CEREBRAS_API_KEY tidak dikonfigurasi. Melewati Cerebras...")
+
+        # 3. Fallback Kedua: Cloudflare Workers AI (Model: @cf/meta/llama-3.3-70b-instruct-fp8-fast)
+        from src.config import CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
+        if CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID:
+            try:
+                return self._call_cloudflare_api(messages)
+            except Exception as e_cf:
+                logger.error(f"Cloudflare Workers AI API gagal: {e_cf}.")
+        else:
+            logger.warning("CLOUDFLARE_API_TOKEN atau CLOUDFLARE_ACCOUNT_ID tidak dikonfigurasi. Melewati Cloudflare...")
+
+        raise RuntimeError("Seluruh API (NVIDIA NIM, Cerebras, dan Cloudflare) gagal memberikan respons.")
 
     def analyze_batch(self, comments: list[dict], video_context: str = None) -> list[dict]:
         """
@@ -129,7 +230,7 @@ class LLMSentimentAnalyzer:
         ]
         
         logger.info(f"Mengirim batch analisis sentimen berisi {len(comments)} komentar ke NVIDIA LLM...")
-        raw_response = self._call_nvidia_api(messages)
+        raw_response = self._call_api_with_fallbacks(messages)
         
         if not raw_response:
             raise RuntimeError("Respons dari LLM kosong.")
@@ -208,7 +309,7 @@ class LLMSentimentAnalyzer:
             {"role": "user", "content": f"Komentar: {text}"}
         ]
         
-        response = self._call_nvidia_api(messages)
+        response = self._call_api_with_fallbacks(messages)
         import re
         clean_response = re.sub(r'<thought>.*?</thought>', '', response, flags=re.DOTALL).strip()
         if clean_response.startswith("```json"):

@@ -10,6 +10,10 @@ MAX_COMMENTS = int(os.getenv("MAX_COMMENTS", 100))
 NVIDIA_MODEL = os.getenv("NVIDIA_MODEL", "meta/llama-3.1-70b-instruct")
 APP_MODE = os.getenv("APP_MODE", "development").strip().lower()
 
+CLOUDFLARE_API_TOKEN = os.getenv("CLOUDFLARE_API_TOKEN", "")
+CLOUDFLARE_ACCOUNT_ID = os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
+
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LEXICON_DIR = os.path.join(BASE_DIR, "lexicon")
