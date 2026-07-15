@@ -653,8 +653,8 @@ def render_mode_tab_content(mode_key, llm_col_sentiment, llm_col_reason, mode_ti
                                         "text": row["Original Comment"]
                                     })
                                 
-                                # Coba Llama 3.3 70b sebagai model utama terkuat
-                                ds_analyzer = LLMSentimentAnalyzer(model="meta/llama-3.3-70b-instruct")
+                                # Coba Google Gemma 3 sebagai model utama terkuat (non-Llama)
+                                ds_analyzer = LLMSentimentAnalyzer(model="google/gemma-3-12b-it")
                                 ds_results = []
                                 batch_size = 20
                                 num_batches = (len(comments_to_analyze) - 1) // batch_size + 1
@@ -664,21 +664,10 @@ def render_mode_tab_content(mode_key, llm_col_sentiment, llm_col_reason, mode_ti
                                     video_context = get_video_context(st.session_state.video_url) if mode_key == "video" else None
                                     try:
                                         batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
-                                    except Exception as e_fallback:
-                                        status.write(f"     ⚠️ Llama 3.3 70B gagal ({e_fallback}). Menggunakan model Llama 3.1 8B...")
-                                        fallback_model = "meta/llama-3.1-8b-instruct"
-                                        fallback_analyzer = LLMSentimentAnalyzer(model=fallback_model)
-                                        try:
-                                            batch_results = fallback_analyzer.analyze_batch(batch, video_context=video_context)
-                                        except Exception as e_second_fallback:
-                                            status.write(f"     ⚠️ Llama 3.1 8B gagal. Mencoba DeepSeek V4 Pro sebagai pilihan terakhir...")
-                                            last_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
-                                            try:
-                                                batch_results = last_analyzer.analyze_batch(batch, video_context=video_context)
-                                            except Exception as e_final:
-                                                status.update(label="Gagal!", state="error", expanded=True)
-                                                st.error(f"Gagal melakukan Quick Labeling: Seluruh model gagal merespon ({e_final}).")
-                                                return
+                                    except Exception as e_final:
+                                        status.update(label="Gagal!", state="error", expanded=True)
+                                        st.error(f"Gagal melakukan Quick Labeling: Seluruh model gagal merespon ({e_final}).")
+                                        return
                                     ds_results.extend(batch_results)
                                 
                                 for r in ds_results:
@@ -2930,6 +2919,88 @@ if menu_selection == "Analisis Perbandingan Global":
                         unsafe_allow_html=True
                     )
                     
+            # 🛠 Fitur Pengisian Cepat Global (Global Quick Labeling)
+            empty_global_count = total_comments - total_eval
+            st.markdown(" ")
+            with st.expander("🛠 Fitur Pengisian Cepat Global (Global Quick Labeling)", expanded=False):
+                st.markdown(
+                    f"Komentar kosong Ground Truth dari seluruh video terpilih: **{empty_global_count}**<br/>"
+                    "<small>Gunakan tombol di bawah ini untuk mengisi seluruh Ground Truth yang kosong menggunakan model non-Llama (Google Gemma 3 / Cerebras GPT-OSS) untuk menghindari bias evaluasi Llama.</small>",
+                    unsafe_allow_html=True
+                )
+                
+                # Tombol Isi Otomatis Global
+                if st.button("Isi Otomatis Ground Truth Global", use_container_width=True, key="btn_fill_global"):
+                    if empty_global_count > 0:
+                        with st.status("Menjalankan Global Quick Labeling...", expanded=True) as status:
+                            gemma_analyzer = LLMSentimentAnalyzer(model="google/gemma-3-12b-it")
+                            success_count = 0
+                            
+                            for h_key in selected_global_files:
+                                df_temp = history_videos[h_key].copy()
+                                empty_mask = df_temp["Ground Truth"].astype(str).str.strip().eq("") | df_temp["Ground Truth"].isna()
+                                empty_rows_count = empty_mask.sum()
+                                
+                                if empty_rows_count > 0:
+                                    clean_name = h_key
+                                    match = re.match(r"^\[(.*?)\] (.*)$", clean_name)
+                                    v_id = match.group(1) if match else "unknown"
+                                    v_title = match.group(2) if match else clean_name
+                                    v_url = f"https://www.youtube.com/watch?v={v_id}"
+                                    
+                                    status.write(f"🎬 **Memproses Video:** {v_title[:35]}... ({empty_rows_count} komentar kosong)")
+                                    
+                                    comments_to_analyze = []
+                                    for idx, row in df_temp[empty_mask].iterrows():
+                                        comments_to_analyze.append({
+                                            "comment_id": row["Comment ID"],
+                                            "text": row["Original Comment"]
+                                        })
+                                        
+                                    results_vid = []
+                                    batch_size = 20
+                                    num_batches = (len(comments_to_analyze) - 1) // batch_size + 1
+                                    
+                                    try:
+                                        for batch_idx in range(0, len(comments_to_analyze), batch_size):
+                                            batch = comments_to_analyze[batch_idx:batch_idx+batch_size]
+                                            status.write(f"   - Batch {batch_idx//batch_size + 1}/{num_batches}...")
+                                            batch_results = gemma_analyzer.analyze_batch(batch, video_context=None)
+                                            results_vid.extend(batch_results)
+                                            
+                                        # Tulis hasil ke dataframe temp
+                                        for r in results_vid:
+                                            cid = r["comment_id"]
+                                            sent = r["llm_sentiment"]
+                                            df_temp.loc[df_temp["Comment ID"] == cid, "Ground Truth"] = sent
+                                            
+                                        # Simpan secara lokal
+                                        safe_title = make_safe_filename(v_title)
+                                        history_filename = f"[{v_id}] {safe_title}.csv"
+                                        history_path = os.path.join(HISTORY_DIR, history_filename)
+                                        df_temp.to_csv(history_path, index=False, encoding="utf-8-sig")
+                                        
+                                        # Jika video terpilih ini adalah video aktif yang sedang dimuat, update session state
+                                        if st.session_state.df is not None and st.session_state.video_url and extract_video_id(st.session_state.video_url) == v_id:
+                                            st.session_state.df = df_temp.copy()
+                                            st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+                                            
+                                        # Sinkronisasi ke Google Sheets jika mode production
+                                        if APP_MODE == "production":
+                                            sync_video_to_gsheets(v_id, v_title, v_url, df_temp)
+                                            
+                                        # Update dictionary memori agar langsung terlihat
+                                        history_videos[h_key] = df_temp
+                                        success_count += 1
+                                    except Exception as e_vid:
+                                        status.write(f"⚠️ Gagal memproses video {v_title[:20]}: {e_vid}")
+                                        
+                            status.update(label="Selesai!", state="complete", expanded=False)
+                            st.success(f"Berhasil mengisi Ground Truth otomatis untuk {success_count} video!")
+                            st.rerun()
+                    else:
+                        st.warning("Semua Ground Truth sudah lengkap terisi!")
+
             if total_eval == 0:
                 st.warning("Belum ada data Ground Truth yang diisi di seluruh video yang dipilih. Metrik komparasi tidak dapat ditampilkan.")
             else:
