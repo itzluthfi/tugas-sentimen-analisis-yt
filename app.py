@@ -1905,42 +1905,97 @@ def save_to_gsheets(df_to_save):
 def sync_video_to_gsheets(video_id, video_title, video_url, df_video):
     """
     Menambahkan/memperbarui data hasil analisis video tertentu ke master Google Sheets.
+    Melakukan sinkronisasi dua arah: Menggabungkan Ground Truth lokal dan cloud agar saling mengisi,
+    kemudian menyimpan hasil gabungan tersebut ke file lokal dan Google Sheets.
     """
     if APP_MODE != "production" or conn is None:
         return
         
-    df_all = load_all_gsheets_data()
-    
-    # Hapus baris yang memiliki Video ID dan Mode Analisis yang sama agar tidak duplikat
-    if not df_all.empty:
-        analysis_mode = st.session_state.analysis_mode
-        if "Analysis Mode" in df_video.columns and len(df_video) > 0:
-            analysis_mode = df_video["Analysis Mode"].iloc[0]
-        df_all = df_all[~((df_all["Video ID"] == video_id) & (df_all["Analysis Mode"] == analysis_mode))]
+    try:
+        df_all = load_all_gsheets_data()
         
-    new_rows = []
-    for _, row in df_video.iterrows():
-        new_rows.append({
-            "Video ID": video_id,
-            "Video Title": video_title,
-            "Video URL": video_url,
-            "Comment ID": row["Comment ID"] if "Comment ID" in row else row.get("comment_id", ""),
-            "Author": row["Author"] if "Author" in row else row.get("author", ""),
-            "Original Comment": row["Original Comment"] if "Original Comment" in row else row.get("original_comment", ""),
-            "Cleaned Comment": row["Cleaned Comment"] if "Cleaned Comment" in row else row.get("cleaned_comment", ""),
-            "Lexicon Sentiment": row["Lexicon Sentiment"] if "Lexicon Sentiment" in row else row.get("lexicon_sentiment", ""),
-            "Lexicon Score": row["Lexicon Score"] if "Lexicon Score" in row else row.get("lexicon_score", ""),
-            "LLM Sentiment": row["LLM Sentiment"] if "LLM Sentiment" in row else row.get("llm_sentiment", ""),
-            "LLM Reason": row["LLM Reason"] if "LLM Reason" in row else row.get("llm_reason", ""),
-            "LLM Model": row["LLM Model"] if "LLM Model" in row else st.session_state.llm_model,
-            "Language": row["Language"] if "Language" in row else st.session_state.detected_lang,
-            "Analysis Mode": row["Analysis Mode"] if "Analysis Mode" in row else st.session_state.analysis_mode,
-            "Ground Truth": row.get("Ground Truth", "")
-        })
-    df_new = pd.DataFrame(new_rows)
-    
-    df_combined = pd.concat([df_all, df_new], ignore_index=True)
-    save_to_gsheets(df_combined)
+        # 1. Ambil data video ini yang ada di cloud untuk penggabungan Ground Truth
+        df_video_gs = pd.DataFrame()
+        if not df_all.empty:
+            df_video_gs = df_all[df_all["Video ID"] == video_id]
+            
+        df_merged = df_video.copy()
+        
+        # 2. Jika ada data di Google Sheets, gabungkan Ground Truth yang terisi
+        if not df_video_gs.empty:
+            gs_gts = {}
+            for _, row in df_video_gs.iterrows():
+                cid = str(row.get("Comment ID", "")).strip()
+                gt = str(row.get("Ground Truth", "")).strip()
+                if cid and gt and gt.lower() in ["positif", "negatif", "netral"]:
+                    gs_gts[cid] = gt
+            
+            # Update local df dengan data dari Google Sheets jika lokal kosong
+            for idx, row in df_merged.iterrows():
+                cid = row["Comment ID"] if "Comment ID" in row else row.get("comment_id", "")
+                cid_str = str(cid).strip()
+                local_gt = str(row.get("Ground Truth", "")).strip()
+                if (not local_gt or local_gt.lower() not in ["positif", "negatif", "netral"]) and cid_str in gs_gts:
+                    df_merged.at[idx, "Ground Truth"] = gs_gts[cid_str]
+                    
+        # 3. Update file lokal dengan data hasil penggabungan
+        if st.session_state.df is not None and st.session_state.video_url and extract_video_id(st.session_state.video_url) == video_id:
+            # Jika video ini adalah video aktif, update df di session_state
+            for idx, row in df_merged.iterrows():
+                cid = row["Comment ID"] if "Comment ID" in row else row.get("comment_id", "")
+                gt = row.get("Ground Truth", "")
+                st.session_state.df.loc[st.session_state.df["Comment ID"] == cid, "Ground Truth"] = gt
+            st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
+            
+        safe_title = make_safe_filename(video_title)
+        history_filename = f"[{video_id}] {safe_title}.csv"
+        history_path = os.path.join(HISTORY_DIR, history_filename)
+        df_merged.to_csv(history_path, index=False, encoding="utf-8-sig")
+        
+        # 4. Hapus baris lama di df_all agar tidak duplikat
+        if not df_all.empty:
+            analysis_mode = st.session_state.analysis_mode
+            if "Analysis Mode" in df_merged.columns and len(df_merged) > 0:
+                analysis_mode = df_merged["Analysis Mode"].iloc[0]
+            df_all = df_all[~((df_all["Video ID"] == video_id) & (df_all["Analysis Mode"] == analysis_mode))]
+            
+        new_rows = []
+        for _, row in df_merged.iterrows():
+            # Get correct LLM Sentiment and Reason columns
+            llm_sent = row.get("LLM Sentiment", "")
+            if "LLM Sentiment Global" in row:
+                llm_sent = row["LLM Sentiment Global"]
+            elif "llm_sentiment" in row:
+                llm_sent = row["llm_sentiment"]
+                
+            llm_reas = row.get("LLM Reason", "")
+            if "LLM Reason Global" in row:
+                llm_reas = row["LLM Reason Global"]
+            elif "llm_reason" in row:
+                llm_reas = row["llm_reason"]
+                
+            new_rows.append({
+                "Video ID": video_id,
+                "Video Title": video_title,
+                "Video URL": video_url,
+                "Comment ID": row["Comment ID"] if "Comment ID" in row else row.get("comment_id", ""),
+                "Author": row["Author"] if "Author" in row else row.get("author", ""),
+                "Original Comment": row["Original Comment"] if "Original Comment" in row else row.get("original_comment", ""),
+                "Cleaned Comment": row["Cleaned Comment"] if "Cleaned Comment" in row else row.get("cleaned_comment", ""),
+                "Lexicon Sentiment": row["Lexicon Sentiment"] if "Lexicon Sentiment" in row else row.get("lexicon_sentiment", ""),
+                "Lexicon Score": row["Lexicon Score"] if "Lexicon Score" in row else row.get("lexicon_score", ""),
+                "LLM Sentiment": llm_sent,
+                "LLM Reason": llm_reas,
+                "LLM Model": row["LLM Model"] if "LLM Model" in row else st.session_state.llm_model,
+                "Language": row["Language"] if "Language" in row else st.session_state.detected_lang,
+                "Analysis Mode": row["Analysis Mode"] if "Analysis Mode" in row else st.session_state.analysis_mode,
+                "Ground Truth": row.get("Ground Truth", "")
+            })
+        df_new = pd.DataFrame(new_rows)
+        df_combined = pd.concat([df_all, df_new], ignore_index=True)
+        save_to_gsheets(df_combined)
+    except Exception as e:
+        st.error(f"Gagal sinkronisasi dua arah ke Google Sheets: {e}")
 
 def get_existing_ground_truths():
     """
@@ -2024,6 +2079,31 @@ def detect_language_from_title(title):
     except Exception:
         return "id"
 
+def get_all_history_files_combined():
+    history_files_set = set()
+    if os.path.exists(HISTORY_DIR):
+        for f in os.listdir(HISTORY_DIR):
+            if f.endswith(".csv"):
+                history_files_set.add(f)
+    if APP_MODE == "production" and conn is not None:
+        try:
+            df_gs = load_all_gsheets_data()
+            if not df_gs.empty:
+                grouped = df_gs.groupby(["Video ID", "Video Title"])
+                for (vid_id, vid_title), _ in grouped:
+                    safe_t = make_safe_filename(vid_title)
+                    fn = f"[{vid_id}] {safe_t}.csv"
+                    history_files_set.add(fn)
+        except Exception:
+            pass
+    files_list = list(history_files_set)
+    def sort_key(x):
+        local_path = os.path.join(HISTORY_DIR, x)
+        if os.path.exists(local_path):
+            return os.path.getmtime(local_path)
+        return 0.0
+    return sorted(files_list, key=sort_key, reverse=True)
+
 if menu_selection == "Analisis Video Tunggal":
     # Sidebar Config
     st.sidebar.title(":material/settings: Setelan SEMANTIKA")
@@ -2031,8 +2111,8 @@ if menu_selection == "Analisis Video Tunggal":
     
     data_source = st.sidebar.radio(
         "Sumber Data",
-        options=["Ambil Video Baru (Scraping)", "Buka Riwayat Analisis (Lokal)"],
-        help="Pilih apakah ingin melakukan penarikan data baru dari YouTube atau membuka riwayat yang sudah ada di folder history."
+        options=["Ambil Video Baru (Scraping)", "Buka Riwayat Analisis (Lokal & Cloud)"],
+        help="Pilih apakah ingin melakukan penarikan data baru dari YouTube atau membuka riwayat yang ada di folder history atau cloud."
     )
     
     # Initialize placeholders to avoid reference errors
@@ -2096,19 +2176,40 @@ if menu_selection == "Analisis Video Tunggal":
         
         btn_analyze = st.sidebar.button(":material/play_circle: Mulai Analisis Data", use_container_width=True)
     else:
-        # Scan history files
-        history_files = sorted([f for f in os.listdir(HISTORY_DIR) if f.endswith(".csv")])
+        # Scan history files (Combined local & cloud)
+        history_files = get_all_history_files_combined()
         if not history_files:
-            st.sidebar.warning("Tidak ditemukan riwayat analisis lokal di folder history.")
+            st.sidebar.warning("Tidak ditemukan riwayat analisis lokal maupun cloud.")
         else:
             selected_file = st.sidebar.selectbox(
                 "Pilih Riwayat Analisis",
                 options=history_files,
-                help="Pilih file riwayat yang ingin ditampilkan."
+                help="Pilih file riwayat lokal atau cloud yang ingin ditampilkan."
             )
             btn_load_history = st.sidebar.button(":material/folder_open: Buka Riwayat", use_container_width=True)
             if btn_load_history and selected_file:
                 history_path = os.path.join(HISTORY_DIR, selected_file)
+                
+                # Unduh dari cloud jika file belum ada di lokal disk
+                if not os.path.exists(history_path):
+                    if APP_MODE == "production" and conn is not None:
+                        try:
+                            match = re.match(r"^\[(.*?)\] (.*)\.csv$", selected_file)
+                            if match:
+                                vid_id = match.group(1)
+                                df_all = load_all_gsheets_data()
+                                if not df_all.empty:
+                                    df_vid = df_all[df_all["Video ID"] == vid_id].copy()
+                                    if not df_vid.empty:
+                                        df_vid = upgrade_dataframe_schema(df_vid)
+                                        local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment Global", "LLM Reason Global", "LLM Sentiment Video", "LLM Reason Video", "LLM Model", "Language", "Ground Truth", "Lexicon Time", "LLM Time Global", "LLM Time Video"]
+                                        df_vid["No"] = range(1, len(df_vid) + 1)
+                                        df_vid = df_vid[[col for col in local_cols if col in df_vid.columns]]
+                                        os.makedirs(HISTORY_DIR, exist_ok=True)
+                                        df_vid.to_csv(history_path, index=False, encoding="utf-8-sig")
+                        except Exception as e_dl:
+                            st.sidebar.error(f"Gagal mengunduh data dari cloud: {e_dl}")
+                
                 try:
                     df_loaded = pd.read_csv(history_path)
                     df_loaded = upgrade_dataframe_schema(df_loaded)
@@ -2367,19 +2468,35 @@ if menu_selection == "Analisis Video Tunggal":
     st.sidebar.markdown("---")
     st.sidebar.subheader(":material/history: Riwayat Analisis")
     
-    history_files = []
-    if os.path.exists(HISTORY_DIR):
-        history_files = sorted(
-            [f for f in os.listdir(HISTORY_DIR) if f.endswith(".csv")],
-            key=lambda x: os.path.getmtime(os.path.join(HISTORY_DIR, x)),
-            reverse=True
-        )
+    history_files = get_all_history_files_combined()
     
     if history_files:
         def load_history_callback():
             selected = st.session_state.history_selector
             if selected != "-- Pilih untuk memuat --" and selected != st.session_state.loaded_history_file:
                 history_path = os.path.join(HISTORY_DIR, selected)
+                
+                # Unduh dari cloud jika file belum ada di lokal disk
+                if not os.path.exists(history_path):
+                    if APP_MODE == "production" and conn is not None:
+                        try:
+                            match = re.match(r"^\[(.*?)\] (.*)\.csv$", selected)
+                            if match:
+                                vid_id = match.group(1)
+                                df_all = load_all_gsheets_data()
+                                if not df_all.empty:
+                                    df_vid = df_all[df_all["Video ID"] == vid_id].copy()
+                                    if not df_vid.empty:
+                                        df_vid = upgrade_dataframe_schema(df_vid)
+                                        local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment Global", "LLM Reason Global", "LLM Sentiment Video", "LLM Reason Video", "LLM Model", "Language", "Ground Truth", "Lexicon Time", "LLM Time Global", "LLM Time Video"]
+                                        df_vid["No"] = range(1, len(df_vid) + 1)
+                                        df_vid = df_vid[[col for col in local_cols if col in df_vid.columns]]
+                                        os.makedirs(HISTORY_DIR, exist_ok=True)
+                                        df_vid.to_csv(history_path, index=False, encoding="utf-8-sig")
+                        except Exception as e_dl:
+                            st.sidebar.error(f"Gagal mengunduh data dari cloud: {e_dl}")
+                            return
+                
                 try:
                     df_loaded = pd.read_csv(history_path)
                     df_loaded = upgrade_dataframe_schema(df_loaded)
@@ -2461,11 +2578,29 @@ if menu_selection == "Analisis Video Tunggal":
             with col_del1:
                 if st.button("Hapus Terpilih", type="primary", use_container_width=True):
                     if to_delete:
+                        # 1. Hapus dari lokal disk
                         for h_file in to_delete:
                             file_path = os.path.join(HISTORY_DIR, h_file)
                             if os.path.exists(file_path):
                                 os.remove(file_path)
-                        st.sidebar.success(f"Berhasil menghapus {len(to_delete)} riwayat!")
+                                
+                        # 2. Hapus dari Google Sheets jika production
+                        if APP_MODE == "production" and conn is not None:
+                            try:
+                                df_all = load_all_gsheets_data()
+                                if not df_all.empty:
+                                    vids_to_del = []
+                                    for h_file in to_delete:
+                                        match = re.match(r"^\[(.*?)\] (.*)\.csv$", h_file)
+                                        if match:
+                                            vids_to_del.append(match.group(1))
+                                    if vids_to_del:
+                                        df_filtered = df_all[~df_all["Video ID"].isin(vids_to_del)]
+                                        save_to_gsheets(df_filtered)
+                            except Exception as e_del:
+                                st.sidebar.error(f"Gagal menghapus dari cloud: {e_del}")
+                                
+                        st.sidebar.success(f"Berhasil menghapus {len(to_delete)} riwayat dari lokal & cloud!")
                         if st.session_state.loaded_history_file in to_delete:
                             st.session_state.df = None
                             st.session_state.loaded_history_file = ""
@@ -2476,15 +2611,26 @@ if menu_selection == "Analisis Video Tunggal":
                         st.sidebar.warning("Pilih riwayat dulu!")
             with col_del2:
                 if st.button("Hapus Semua", use_container_width=True):
+                    # 1. Hapus semua file lokal
                     for h_file in history_files:
                         file_path = os.path.join(HISTORY_DIR, h_file)
                         if os.path.exists(file_path):
                             os.remove(file_path)
+                            
+                    # 2. Hapus dari Google Sheets jika production
+                    if APP_MODE == "production" and conn is not None:
+                        try:
+                            cols = ["Video ID", "Video Title", "Video URL", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment", "LLM Reason", "LLM Model", "Language", "Analysis Mode", "Ground Truth"]
+                            empty_df = pd.DataFrame(columns=cols)
+                            save_to_gsheets(empty_df)
+                        except Exception as e_del_all:
+                            st.sidebar.error(f"Gagal menghapus dari cloud: {e_del_all}")
+                            
                     if os.path.exists(OUTPUT_FILE):
                         os.remove(OUTPUT_FILE)
                     st.session_state.df = None
                     st.session_state.loaded_history_file = ""
-                    st.sidebar.success("Semua riwayat berhasil dihapus!")
+                    st.sidebar.success("Semua riwayat lokal & cloud berhasil dihapus!")
                     st.rerun()
     else:
         st.sidebar.info("Belum ada riwayat analisis.")
