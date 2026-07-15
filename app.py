@@ -641,13 +641,10 @@ def render_mode_tab_content(mode_key, llm_col_sentiment, llm_col_reason, mode_ti
             st.write(f"Komentar yang bisa diisi otomatis (kosong): **{fillable_count}**")
             btn_col1, btn_col2 = st.columns(2)
             with btn_col1:
-                if st.button("Isi Otomatis", use_container_width=True, key=f"btn_fill_{mode_key}", help="Mengisi Ground Truth kosong dengan hasil prediksi DeepSeek V4 Pro"):
+                if st.button("Isi Otomatis", use_container_width=True, key=f"btn_fill_{mode_key}", help="Mengisi Ground Truth kosong dengan hasil prediksi LLM"):
                     if fillable_count > 0:
-                        with st.status("Mengisi Ground Truth menggunakan DeepSeek V4 Pro...", expanded=True) as status:
+                        with st.status("Mengisi Ground Truth menggunakan LLM...", expanded=True) as status:
                             if st.session_state.llm_model == "deepseek-ai/deepseek-v4-pro":
-                                st.session_state.df.loc[empty_gt_mask, "Ground Truth"] = st.session_state.df.loc[empty_gt_mask, llm_col_sentiment]
-                            else:
-                                # Fetch on the fly
                                 rows_to_fill = st.session_state.df[empty_gt_mask]
                                 comments_to_analyze = []
                                 for idx, row in rows_to_fill.iterrows():
@@ -656,7 +653,8 @@ def render_mode_tab_content(mode_key, llm_col_sentiment, llm_col_reason, mode_ti
                                         "text": row["Original Comment"]
                                     })
                                 
-                                ds_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
+                                # Coba Llama 3.3 70b sebagai model utama terkuat
+                                ds_analyzer = LLMSentimentAnalyzer(model="meta/llama-3.3-70b-instruct")
                                 ds_results = []
                                 batch_size = 20
                                 num_batches = (len(comments_to_analyze) - 1) // batch_size + 1
@@ -667,24 +665,30 @@ def render_mode_tab_content(mode_key, llm_col_sentiment, llm_col_reason, mode_ti
                                     try:
                                         batch_results = ds_analyzer.analyze_batch(batch, video_context=video_context)
                                     except Exception as e_fallback:
-                                        status.write(f"     ⚠️ DeepSeek V4 Pro gagal ({e_fallback}). Menggunakan model fallback...")
-                                        fallback_model = st.session_state.llm_model
-                                        if fallback_model == "deepseek-ai/deepseek-v4-pro":
-                                            fallback_model = "deepseek-ai/deepseek-v4-flash"
+                                        status.write(f"     ⚠️ Llama 3.3 70B gagal ({e_fallback}). Menggunakan model Llama 3.1 8B...")
+                                        fallback_model = "meta/llama-3.1-8b-instruct"
                                         fallback_analyzer = LLMSentimentAnalyzer(model=fallback_model)
                                         try:
                                             batch_results = fallback_analyzer.analyze_batch(batch, video_context=video_context)
-                                        except Exception as e_final:
-                                            status.update(label="Gagal!", state="error", expanded=True)
-                                            st.error(f"Gagal melakukan Quick Labeling: API NVIDIA NIM tidak merespon ({e_final}). Silakan periksa kunci API Anda atau coba beberapa saat lagi.")
-                                            return
+                                        except Exception as e_second_fallback:
+                                            status.write(f"     ⚠️ Llama 3.1 8B gagal. Mencoba DeepSeek V4 Pro sebagai pilihan terakhir...")
+                                            last_analyzer = LLMSentimentAnalyzer(model="deepseek-ai/deepseek-v4-pro")
+                                            try:
+                                                batch_results = last_analyzer.analyze_batch(batch, video_context=video_context)
+                                            except Exception as e_final:
+                                                status.update(label="Gagal!", state="error", expanded=True)
+                                                st.error(f"Gagal melakukan Quick Labeling: Seluruh model gagal merespon ({e_final}).")
+                                                return
                                     ds_results.extend(batch_results)
                                 
                                 for r in ds_results:
                                     cid = r["comment_id"]
                                     sentiment = r["llm_sentiment"]
                                     st.session_state.df.loc[st.session_state.df["Comment ID"] == cid, "Ground Truth"] = sentiment
-                                    
+                            else:
+                                # Jika model aktif adalah model lain yang valid, salin saja langsung dari hasil prediksi yang ada (instan & gratis)
+                                st.session_state.df.loc[empty_gt_mask, "Ground Truth"] = st.session_state.df.loc[empty_gt_mask, llm_col_sentiment]
+                            
                             st.session_state.df.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
                             video_id = extract_video_id(st.session_state.video_url)
                             if video_id:
