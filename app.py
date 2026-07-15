@@ -2550,6 +2550,7 @@ if menu_selection == "Analisis Perbandingan Global":
                 if f.endswith(".csv"):
                     fpath = os.path.join(HISTORY_DIR, f)
                     df_temp = pd.read_csv(fpath)
+                    df_temp = upgrade_dataframe_schema(df_temp)
                     clean_name = f.replace(".csv", "")
                     history_videos[clean_name] = df_temp
         except Exception:
@@ -2563,8 +2564,23 @@ if menu_selection == "Analisis Perbandingan Global":
                 grouped = df_gs.groupby(["Video ID", "Video Title"])
                 for (vid_id, vid_title), group_df in grouped:
                     display_name = f"[{vid_id}] {make_safe_filename(vid_title)}"
+                    
+                    df_gs_upgraded = upgrade_dataframe_schema(group_df)
+                    
+                    # BIAR SINKRON:
+                    # Jika video ini sudah ada di riwayat lokal, kita utamakan data lokal!
+                    # Mengapa? Karena user mengedit Ground Truth secara lokal di komputernya.
+                    if display_name in history_videos:
+                        local_df = history_videos[display_name]
+                        local_gt_count = local_df["Ground Truth"].dropna().astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"]).sum()
+                        gs_gt_count = df_gs_upgraded["Ground Truth"].dropna().astype(str).str.strip().str.lower().isin(["positif", "negatif", "netral"]).sum()
+                        
+                        # Jika lokal memiliki ground truth yang lebih banyak/sama, pertahankan lokal
+                        if local_gt_count >= gs_gt_count:
+                            continue
+                            
                     local_cols = ["No", "Comment ID", "Author", "Original Comment", "Cleaned Comment", "Lexicon Sentiment", "Lexicon Score", "LLM Sentiment Global", "LLM Reason Global", "LLM Sentiment Video", "LLM Reason Video", "LLM Model", "Language", "Ground Truth", "Lexicon Time", "LLM Time Global", "LLM Time Video"]
-                    df_temp = group_df.copy()
+                    df_temp = df_gs_upgraded.copy()
                     df_temp["No"] = range(1, len(df_temp) + 1)
                     # Filter existing columns to match local format
                     df_temp = df_temp[[col for col in local_cols if col in df_temp.columns]]
@@ -2596,6 +2612,33 @@ if menu_selection == "Analisis Perbandingan Global":
                 st.session_state.active_global_files = []
                 st.rerun()
                 
+        if APP_MODE == "production" and conn is not None:
+            st.markdown("---")
+            col_sync_all, _ = st.columns([4.0, 6.0])
+            with col_sync_all:
+                if st.button("🔄 Sinkronkan Ulang Semua Data Lokal ke Cloud", key="sync_all_to_cloud_btn", use_container_width=True, help="Mengunggah seluruh file riwayat lokal Anda ke Google Sheets database"):
+                    with st.status("Menyinkronkan data lokal ke cloud...", expanded=True) as sync_status:
+                        success_count = 0
+                        local_files = [f for f in os.listdir(HISTORY_DIR) if f.endswith(".csv")]
+                        for f in local_files:
+                            fpath = os.path.join(HISTORY_DIR, f)
+                            df_temp = pd.read_csv(fpath)
+                            clean_name = f.replace(".csv", "")
+                            match = re.match(r"^\[(.*?)\] (.*)$", clean_name)
+                            if match:
+                                v_id = match.group(1)
+                                v_title = match.group(2)
+                                v_url = f"https://www.youtube.com/watch?v={v_id}"
+                                sync_status.write(f"   - Mengunggah video: {v_title[:25]}...")
+                                try:
+                                    sync_video_to_gsheets(v_id, v_title, v_url, df_temp)
+                                    success_count += 1
+                                except Exception as e_sync:
+                                    sync_status.write(f"     ⚠️ Gagal: {e_sync}")
+                        sync_status.update(label="Sinkronisasi Selesai!", state="complete", expanded=False)
+                    st.success(f"Berhasil menyinkronkan {success_count} file riwayat lokal ke Google Sheets!")
+                    st.rerun()
+                    
         st.markdown(" ")
         
         selected_global_files = []
