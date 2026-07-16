@@ -1039,6 +1039,68 @@ st.markdown("""
         font-weight: 500 !important;
         transition: all 0.2s ease !important;
     }
+
+    .flow-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        gap: 14px;
+        margin: 18px 0 26px 0;
+    }
+    .flow-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 16px 18px;
+        min-height: 150px;
+        box-shadow: 0 4px 16px -8px rgba(15, 23, 42, 0.18);
+    }
+    .flow-step {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 999px;
+        background: #0f172a;
+        color: #ffffff;
+        font-size: 0.85rem;
+        font-weight: 700;
+        margin-bottom: 10px;
+    }
+    .flow-card h3 {
+        font-size: 1rem !important;
+        margin: 0 0 8px 0 !important;
+        letter-spacing: 0 !important;
+    }
+    .flow-card p, .flow-card li {
+        color: #475569;
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+    .flow-card ul {
+        padding-left: 18px;
+        margin: 8px 0 0 0;
+    }
+    .flow-note {
+        background: #ecfeff;
+        border: 1px solid #a5f3fc;
+        border-left: 4px solid #0891b2;
+        border-radius: 6px;
+        padding: 14px 16px;
+        color: #164e63;
+        margin-bottom: 18px;
+    }
+    .payload-box {
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 8px;
+        padding: 16px;
+        font-family: Consolas, Monaco, monospace;
+        font-size: 0.86rem;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        border: 1px solid #1e293b;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1856,7 +1918,7 @@ def convert_df_to_pdf(df, video_title, video_url):
 st.sidebar.title(":material/explore: Navigasi Menu")
 menu_selection = st.sidebar.radio(
     "Pilih Halaman:",
-    options=["Analisis Video Tunggal", "Analisis Perbandingan Global", "Kelola Kamus Slang"],
+    options=["Analisis Video Tunggal", "Analisis Perbandingan Global", "Kelola Kamus Slang", "Alur Kerja & Payload AI"],
     index=0
 )
 st.sidebar.markdown("---")
@@ -3491,3 +3553,159 @@ elif menu_selection == "Kelola Kamus Slang":
                 st.rerun()
             else:
                 st.error("Gagal menyimpan kamus slang.")
+
+
+elif menu_selection == "Alur Kerja & Payload AI":
+    st.markdown("<h1><span style='color:#3498db'>SEMAN</span><span style='color:#2ecc71'>TIKA</span> : Alur Kerja & Payload AI</h1>", unsafe_allow_html=True)
+    st.markdown("Halaman ini menyajikan representasi visual alur kerja sistem serta contoh data (*payload*) yang dikirim ke LLM.")
+    st.markdown("---")
+    
+    # Tab Menu
+    tab_flow, tab_payload = st.tabs(["📊 Visualisasi Alur Kerja", "✉️ Payload Pengiriman ke AI"])
+    
+    with tab_flow:
+        st.subheader("🔄 Alur Proses Analisis Sentimen (Lexicon vs LLM)")
+        st.markdown(
+            "Diagram berikut menggambarkan siklus pemrosesan data komentar dari awal input URL hingga evaluasi akurasi:"
+        )
+        
+        # Mermaid Diagram
+        st.markdown(
+            """
+            ```mermaid
+            graph TD
+                A[User memasukkan URL YouTube] --> B(Scraper & Downloader)
+                B --> C[Mengambil Data Komentar]
+                B --> D[Mengambil Konteks Video: Judul, Deskripsi, Tags, Transkrip]
+                
+                C --> E(Preprocessing & Pembersihan Teks)
+                E --> F[Normalisasi Kata Slang & Singkatan]
+                
+                F --> G(Analisis Sentimen Lexicon-based)
+                F --> H(Analisis Sentimen LLM-based)
+                
+                G --> I[Pencarian Bobot di Kamus InSet/VADER]
+                H --> J[Pengiriman Batch Komentar + Konteks Video ke AI]
+                
+                I --> K(Hasil Sentimen Lexicon)
+                J --> L(Hasil Sentimen LLM Global / Video)
+                
+                K --> M(Perhitungan Metrik Evaluasi)
+                L --> M
+                N[Ground Truth Diisi User/Quick Labeling] --> M
+                
+                M --> O[Visualisasi Akurasi, Kappa, F1-Score & Donut Chart]
+                M --> P[Ekspor PDF/PPTX Report]
+            ```
+            """,
+            unsafe_allow_html=True
+        )
+        
+        st.markdown("<br/>", unsafe_allow_html=True)
+        st.info(
+            "💡 **Mengapa Batching Penting?**\n"
+            "Aplikasi mengelompokkan komentar ke dalam *batch* berisi **20 komentar per panggilan API**. "
+            "Ini menghemat kuota token API hingga **95%** dan mempercepat waktu tunggu dibandingkan mengirim komentar satu demi satu.",
+            icon=":material/lightbulb:"
+        )
+        
+    with tab_payload:
+        st.subheader("✉️ Struktur Data yang Dikirim ke LLM")
+        st.write(
+            "Berikut adalah perbedaan struktur System Prompt dan User Prompt yang dikirimkan ke model AI:"
+        )
+        
+        mode_select = st.radio(
+            "Pilih Mode Analisis untuk Melihat Payload:",
+            options=["1. Konteks Global", "2. Konteks ke Video (Relevansi Tinggi)"],
+            horizontal=True
+        )
+        
+        example_comments = [
+            {"comment_id": "c_1", "text": "Mantap bang penjelasannya detail sekali!"},
+            {"comment_id": "c_2", "text": "Lah saya kira bahas game ternyata malah tutorial masak wkwk"},
+            {"comment_id": "c_3", "text": "Beli di mana itu bang mixer nya?"}
+        ]
+        
+        import json
+        formatted_comments = json.dumps(example_comments, indent=2, ensure_ascii=False)
+        
+        if "Konteks Global" in mode_select:
+            st.markdown("### 🌐 Mode: Konteks Global")
+            st.markdown(
+                "Pada mode ini, LLM hanya menerima komentar secara independen dan menilainya secara literal."
+            )
+            
+            st.markdown("#### **System Prompt (Petunjuk Instruksi):**")
+            st.code(
+                "Anda adalah asisten AI yang ahli dalam analisis sentimen teks Bahasa Indonesia, "
+                "termasuk bahasa daerah (seperti Jawa, Sunda) dan singkatan/slang gaul internet.\n"
+                "Tugas Anda adalah menentukan sentimen beserta alasannya dari daftar komentar YouTube yang diberikan secara global.\n\n"
+                "Kategori sentimen wajib berupa salah satu dari: 'positif', 'negatif', atau 'netral'.\n"
+                "Aturan Sentimen:\n"
+                "- 'positif': Komentar berisi pujian, apresiasi, rasa senang, dukungan, kelucuan positif, atau rekomendasi bagus.\n"
+                "- 'negatif': Komentar berisi kritik, keluhan, cacian, kekecewaan, ketidakpuasan, atau hujatan.\n"
+                "- 'netral': Komentar berupa pertanyaan biasa, pernyataan umum, tidak menunjukkan emosi kuat, atau di luar konteks video.\n\n"
+                "Alasan (reason) harus berupa penjelasan singkat (1 kalimat pendek) dalam Bahasa Indonesia mengapa komentar tersebut dikategorikan...\n\n"
+                "Format Output harus berupa JSON ARRAY murni yang berisi objek dengan format:\n"
+                "[\n"
+                "  {\"comment_id\": \"ID_KOMENTAR\", \"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"},\n"
+                "  ...\n"
+                "]\n"
+                "Jangan menambahkan teks penjelasan, pengantar, atau penutup apapun di luar JSON array tersebut.",
+                language="markdown"
+            )
+            
+            st.markdown("#### **User Prompt (Data Input):**")
+            st.code(
+                f"Analisis sentimen untuk komentar-komentar berikut:\n\n{formatted_comments}",
+                language="json"
+            )
+            
+        else:
+            st.markdown("### 🎬 Mode: Konteks ke Video")
+            st.markdown(
+                "Pada mode ini, LLM dibekali informasi detail mengenai video YouTube. "
+                "Ini digunakan untuk memvalidasi komentar yang tidak nyambung (*out-of-context*) menjadi **netral**, serta mendeteksi sarkasme."
+            )
+            
+            example_context = (
+                "JUDUL VIDEO: Tutorial Membuat Kue Brownies Kukus Lembut\n"
+                "DESKRIPSI: Resep brownies kukus rumahan yang sangat mudah dipraktikkan oleh pemula dengan bahan minimal.\n"
+                "TAGS: brownies, resep kue, masak kue, kukus, kuliner\n"
+                "TRANSKRIP VIDEO: Halo semuanya, hari ini kita akan membuat brownies kukus..."
+            )
+            
+            st.markdown("#### **System Prompt (Petunjuk Instruksi + Konteks Video):**")
+            st.code(
+                "Anda adalah asisten AI yang ahli dalam analisis sentimen teks Bahasa Indonesia, "
+                "termasuk bahasa daerah (seperti Jawa, Sunda) dan singkatan/slang gaul internet.\n"
+                "Tugas Anda adalah menentukan sentimen beserta alasannya dari daftar komentar YouTube yang diberikan "
+                "berdasarkan konteks video yang disediakan.\n\n"
+                "Konteks Video:\n"
+                f"{example_context}\n\n"
+                "Aturan Penting:\n"
+                "1. Tentukan sentimen untuk SETIAP komentar hanya menjadi salah satu dari kategori berikut: 'positif', 'negatif', atau 'netral'.\n"
+                "2. Gunakan Konteks Video untuk memahami singkatan, istilah, atau topik yang dibicarakan.\n"
+                "3. Jika sebuah komentar sama sekali tidak relevan dengan isi video (out-of-context/OOT), kategorikan komentar tersebut sebagai 'netral'.\n\n"
+                "Format Output harus berupa JSON ARRAY murni yang berisi objek dengan format:\n"
+                "[\n"
+                "  {\"comment_id\": \"ID_KOMENTAR\", \"sentiment\": \"positif/negatif/netral\", \"reason\": \"alasan singkat\"},\n"
+                "  ...\n"
+                "]\n"
+                "Jangan menambahkan teks penjelasan, pengantar, atau penutup apapun di luar JSON array tersebut.",
+                language="markdown"
+            )
+            
+            st.markdown("#### **User Prompt (Data Input):**")
+            st.code(
+                f"Analisis sentimen untuk komentar-komentar berikut:\n\n{formatted_comments}",
+                language="json"
+            )
+            
+            st.markdown("#### **💡 Hasil Analisis Berdasarkan Konteks:**")
+            st.markdown(
+                "*   Komentar `c_1` (*Mantap bang...*) -> **Positif** (pujian relevan).\n"
+                "*   Komentar `c_2` (*saya kira bahas game...*) -> **Netral** (di luar konteks brownies/out of context, diidentifikasi lewat aturan nomor 3).\n"
+                "*   Komentar `c_3` (*Beli di mana itu bang mixer nya...*) -> **Netral** (pertanyaan biasa tentang mixer, tidak beremosi/relevansi netral)."
+            )

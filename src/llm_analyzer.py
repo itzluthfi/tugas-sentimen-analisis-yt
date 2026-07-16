@@ -1,7 +1,16 @@
 import json
 import logging
 import requests
-from src.config import NVIDIA_API_KEY, NVIDIA_MODEL
+from src.config import (
+    NVIDIA_API_KEY,
+    NVIDIA_MODEL,
+    CEREBRAS_API_KEY,
+    CEREBRAS_MODEL,
+    CLOUDFLARE_API_TOKEN,
+    CLOUDFLARE_ACCOUNT_ID,
+    CLOUDFLARE_MODEL,
+    CLOUDFLARE_FALLBACK_MODEL,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +75,16 @@ class LLMSentimentAnalyzer:
         raise RuntimeError(f"Gagal menghubungi NVIDIA NIM API setelah {max_retries} kali percobaan.")
 
     def _call_cerebras_api(self, messages: list) -> str:
-        from src.config import CEREBRAS_API_KEY
+        cerebras_key = os.getenv("CEREBRAS_API_KEY")
+        cerebras_model_fallback = os.getenv("CEREBRAS_MODEL", "gpt-oss-120b")
         url = "https://api.cerebras.ai/v1/chat/completions"
         headers = {
-            "Authorization": f"Bearer {CEREBRAS_API_KEY}",
+            "Authorization": f"Bearer {cerebras_key}",
             "Content-Type": "application/json"
         }
+        cerebras_model = self.model if self.model.startswith("gpt-") else cerebras_model_fallback
         payload = {
-            "model": "gpt-oss-120b",
+            "model": cerebras_model,
             "messages": messages,
             "temperature": 0.2,
             "max_tokens": 1024
@@ -90,15 +101,27 @@ class LLMSentimentAnalyzer:
             raise RuntimeError(f"Gagal memanggil Cerebras API: {e}")
 
     def _call_cloudflare_api(self, messages: list) -> str:
-        from src.config import CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
-        model_id = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
-        url = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{model_id}"
+        cf_token = os.getenv("CLOUDFLARE_API_TOKEN")
+        cf_account = os.getenv("CLOUDFLARE_ACCOUNT_ID")
+        cf_model_default = os.getenv("CLOUDFLARE_MODEL", "@cf/meta/llama-3.3-70b-instruct-fp8-fast")
+        cf_model_fallback = os.getenv("CLOUDFLARE_FALLBACK_MODEL", "@cf/meta/llama-3.1-8b-instruct")
+        
+        if self.model.startswith("@cf/"):
+            model_id = self.model
+        elif self.model.startswith("meta/"):
+            model_id = f"@cf/{self.model}"
+        else:
+            model_id = cf_model_default
+
+        url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/ai/run/{model_id}"
         headers = {
-            "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
+            "Authorization": f"Bearer {cf_token}",
             "Content-Type": "application/json"
         }
         payload = {
-            "messages": messages
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": 1024
         }
         try:
             response = requests.post(url, json=payload, headers=headers, timeout=15)
@@ -112,21 +135,20 @@ class LLMSentimentAnalyzer:
                     else:
                         return json.dumps(resp)
             
-            # Fallback ke 8B jika 70B 404/400
-            if response.status_code in [400, 404]:
-                logger.warning("Cloudflare 70B tidak tersedia. Menghubungi fallback Cloudflare 8B (@cf/meta/llama-3.1-8b-instruct)...")
-                model_id_8b = "@cf/meta/llama-3.1-8b-instruct"
-                url_8b = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/{model_id_8b}"
-                response_8b = requests.post(url_8b, json=payload, headers=headers, timeout=15)
-                if response_8b.status_code == 200:
-                    res_json_8b = response_8b.json()
-                    result_8b = res_json_8b.get("result", {})
-                    if "response" in result_8b:
-                        resp_8b = result_8b["response"]
-                        if isinstance(resp_8b, str):
-                            return resp_8b.strip()
+            # Fallback ke model Cloudflare lain jika model utama tidak tersedia
+            if response.status_code in [400, 404] and model_id != cf_model_fallback:
+                logger.warning(f"Cloudflare model {model_id} tidak tersedia. Menghubungi fallback model {cf_model_fallback}...")
+                url_fallback = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/ai/run/{cf_model_fallback}"
+                response_fallback = requests.post(url_fallback, json=payload, headers=headers, timeout=15)
+                if response_fallback.status_code == 200:
+                    res_json_fallback = response_fallback.json()
+                    result_fallback = res_json_fallback.get("result", {})
+                    if "response" in result_fallback:
+                        resp_fallback = result_fallback["response"]
+                        if isinstance(resp_fallback, str):
+                            return resp_fallback.strip()
                         else:
-                            return json.dumps(resp_8b)
+                            return json.dumps(resp_fallback)
             
             raise RuntimeError(f"Cloudflare Workers AI Error {response.status_code}: {response.text}")
         except Exception as e:
@@ -137,34 +159,57 @@ class LLMSentimentAnalyzer:
         Tries to call NVIDIA NIM API. If it fails, falls back to Cerebras AI.
         If Cerebras AI also fails, falls back to Cloudflare Workers AI.
         """
-        # 1. Coba NVIDIA NIM API (Maksimal 3 kali percobaan)
-        try:
-            logger.info(f"Mencoba menghubungi NVIDIA NIM API (Model: {self.model})...")
-            return self._call_nvidia_api(messages)
-        except Exception as e_nvidia:
-            logger.warning(f"NVIDIA NIM API gagal: {e_nvidia}. Beralih ke fallback Cerebras AI...")
-            
-        # 2. Fallback Pertama: Cerebras AI (Model: llama-3.3-70b)
-        from src.config import CEREBRAS_API_KEY
-        if CEREBRAS_API_KEY and CEREBRAS_API_KEY.strip() != "":
+        # Dynamic reload of .env to get any newly saved secrets/keys instantly
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+        
+        api_key = os.getenv("NVIDIA_API_KEY")
+        cerebras_key = os.getenv("CEREBRAS_API_KEY")
+        cf_token = os.getenv("CLOUDFLARE_API_TOKEN")
+        cf_account = os.getenv("CLOUDFLARE_ACCOUNT_ID")
+        
+        errors = []
+
+        # 1. Coba NVIDIA NIM API jika tersedia
+        if api_key:
             try:
+                logger.info(f"Mencoba menghubungi NVIDIA NIM API (Model: {self.model})...")
+                self.api_key = api_key
+                return self._call_nvidia_api(messages)
+            except Exception as e_nvidia:
+                err_msg = f"NVIDIA NIM API gagal: {e_nvidia}"
+                logger.warning(err_msg)
+                errors.append(err_msg)
+        else:
+            errors.append("NVIDIA NIM dilewati (NVIDIA_API_KEY tidak dikonfigurasi).")
+
+        # 2. Fallback Pertama: Cerebras AI
+        if cerebras_key and cerebras_key.strip() != "":
+            try:
+                logger.info("Mencoba menghubungi Cerebras AI...")
                 return self._call_cerebras_api(messages)
             except Exception as e_cerebras:
-                logger.warning(f"Cerebras AI API gagal: {e_cerebras}. Beralih ke fallback Cloudflare Workers AI...")
+                err_msg = f"Cerebras AI API gagal: {e_cerebras}"
+                logger.warning(err_msg)
+                errors.append(err_msg)
         else:
-            logger.warning("CEREBRAS_API_KEY tidak dikonfigurasi. Melewati Cerebras...")
+            errors.append("Cerebras AI dilewati (CEREBRAS_API_KEY tidak dikonfigurasi).")
 
-        # 3. Fallback Kedua: Cloudflare Workers AI (Model: @cf/meta/llama-3.3-70b-instruct-fp8-fast)
-        from src.config import CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID
-        if CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID:
+        # 3. Fallback Kedua: Cloudflare Workers AI
+        if cf_token and cf_account:
             try:
+                logger.info("Mencoba menghubungi Cloudflare Workers AI...")
                 return self._call_cloudflare_api(messages)
             except Exception as e_cf:
-                logger.error(f"Cloudflare Workers AI API gagal: {e_cf}.")
+                err_msg = f"Cloudflare Workers AI API gagal: {e_cf}"
+                logger.error(err_msg)
+                errors.append(err_msg)
         else:
-            logger.warning("CLOUDFLARE_API_TOKEN atau CLOUDFLARE_ACCOUNT_ID tidak dikonfigurasi. Melewati Cloudflare...")
+            errors.append("Cloudflare Workers AI dilewati (CLOUDFLARE_API_TOKEN atau CLOUDFLARE_ACCOUNT_ID tidak dikonfigurasi).")
 
-        raise RuntimeError("Seluruh API (NVIDIA NIM, Cerebras, dan Cloudflare) gagal memberikan respons.")
+        # Jika semua gagal
+        err_detail = " | ".join(errors)
+        raise RuntimeError(f"Semua API gagal merespon. Detail: {err_detail}")
 
     def analyze_batch(self, comments: list[dict], video_context: str = None) -> list[dict]:
         """
@@ -172,8 +217,17 @@ class LLMSentimentAnalyzer:
         Each comment in the input list should be a dict with at least 'comment_id' and 'text'.
         Returns a list of dicts with 'comment_id', 'llm_sentiment', and 'llm_reason'.
         """
-        if not self.api_key:
-            raise ValueError("NVIDIA API Key tidak ditemukan. Silakan konfigurasi file .env Anda.")
+        # Dynamic check
+        from dotenv import load_dotenv
+        load_dotenv(override=True)
+        api_key = os.getenv("NVIDIA_API_KEY")
+        cerebras_key = os.getenv("CEREBRAS_API_KEY")
+        cf_token = os.getenv("CLOUDFLARE_API_TOKEN")
+        
+        if not any([api_key, cerebras_key, cf_token]):
+            raise ValueError(
+                "Tidak ada API key LLM yang dikonfigurasi. Silakan tambahkan NVIDIA_API_KEY, CEREBRAS_API_KEY, atau CLOUDFLARE_API_TOKEN di file .env Anda."
+            )
 
         # Structure the batch content for the LLM
         formatted_comments = []
