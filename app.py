@@ -1160,9 +1160,17 @@ if st.session_state.df is None and os.path.exists(OUTPUT_FILE):
                 st.session_state.llm_time = len(df_loaded) * 0.15
                 
             st.session_state.df = df_loaded
-            st.session_state.video_url = YOUTUBE_VIDEO_URL
-            st.session_state.video_title = get_video_title(YOUTUBE_VIDEO_URL)
-            st.session_state.youtube_url_widget = YOUTUBE_VIDEO_URL
+            if "Video URL" in df_loaded.columns and len(df_loaded["Video URL"].dropna()) > 0:
+                st.session_state.video_url = str(df_loaded["Video URL"].iloc[0])
+            else:
+                st.session_state.video_url = YOUTUBE_VIDEO_URL
+                
+            if "Video Title" in df_loaded.columns and len(df_loaded["Video Title"].dropna()) > 0:
+                st.session_state.video_title = str(df_loaded["Video Title"].iloc[0])
+            else:
+                st.session_state.video_title = get_video_title(st.session_state.video_url)
+                
+            st.session_state.youtube_url_widget = st.session_state.video_url
     except Exception:
         pass
 
@@ -2279,11 +2287,13 @@ if menu_selection == "Analisis Video Tunggal":
                         video_title = selected_file.replace(".csv", "")
                         
                     # Save as current output file
+                    df_loaded["Video URL"] = f"https://www.youtube.com/watch?v={video_id}" if video_id != "unknown" else ""
+                    df_loaded["Video Title"] = video_title
                     df_loaded.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
                     
                     st.session_state.df = df_loaded
                     st.session_state.video_title = video_title
-                    st.session_state.video_url = f"https://www.youtube.com/watch?v={video_id}" if video_id != "unknown" else ""
+                    st.session_state.video_url = df_loaded["Video URL"].iloc[0]
                     
                     if "LLM Model" in df_loaded.columns:
                         st.session_state.llm_model = str(df_loaded["LLM Model"].iloc[0])
@@ -2343,6 +2353,8 @@ if menu_selection == "Analisis Video Tunggal":
                             st.session_state.detected_lang = "id"
                             
                         st.session_state.analysis_mode = "Dual Mode"
+                        df_loaded["Video URL"] = url_input
+                        df_loaded["Video Title"] = video_title
                         df_loaded.to_csv(OUTPUT_FILE, index=False, encoding="utf-8-sig")
                         
                         st.session_state.df = df_loaded
@@ -2499,7 +2511,9 @@ if menu_selection == "Analisis Video Tunggal":
                                     "Ground Truth": gt,
                                     "Lexicon Time": st.session_state.lexicon_time,
                                     "LLM Time Global": st.session_state.llm_time_global,
-                                    "LLM Time Video": st.session_state.llm_time_video
+                                    "LLM Time Video": st.session_state.llm_time_video,
+                                    "Video URL": url_input,
+                                    "Video Title": video_title
                                 })
                                 
                             df = pd.DataFrame(final_data)
